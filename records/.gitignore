@@ -1,0 +1,41 @@
+# Go 构建产物
+sales-log
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go 工作目录
+go.work
+
+# 依赖
+vendor/
+
+# 日志文件
+logs/
+*.log
+
+# 配置文件（包含敏感信息）
+config.yml.local
+config.*.local
+.env
+.env.local
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 测试和临时文件
+tmp/
+temp/
+*.tmp

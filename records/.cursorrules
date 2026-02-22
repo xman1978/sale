@@ -1,0 +1,11 @@
+# Records 项目规则
+
+## config.yml 编码问题
+
+**禁止使用 search_replace 或 write 直接编辑 `config.yml`**，会导致中文变为乱码。
+
+修改配置的正确方式：
+1. 编辑 `scripts/restore_config.py` 中的 `CONFIG` 字符串
+2. 运行：`python scripts/restore_config.py`
+
+该脚本会以 UTF-8 编码正确写入 config.yml。

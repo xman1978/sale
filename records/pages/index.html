@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>跟进记录</title>
+  <script>window.APP_CONFIG=window.APP_CONFIG||{apiPrefix:'/api'};</script>
+  <script src="config.js"></script>
+  <script src="https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js" crossorigin="anonymous"></script>
+  <script src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.16.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: #F5F6F7;
+      color: #1F2329;
+      min-height: 100vh;
+    }
+    
+    :root {
+      --primary-text: #1F2329;
+      --secondary-text: #646A73;
+      --tertiary-text: #8F959E;
+      --primary-color: #3370FF;
+      --border-color: #DEE0E3;
+      --bg-color: #F5F6F7;
+      --card-bg: #FFFFFF;
+      --danger-color: #FA5151;
+    }
+    
+    .page {
+      min-height: 100vh;
+      padding-bottom: 20px;
+    }
+    
+    .nav-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      padding: 0 16px;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .nav-back {
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .nav-back svg {
+      width: 20px;
+      height: 20px;
+    }
+    
+    .nav-title {
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--primary-text);
+    }
+    
+    .nav-action {
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .nav-action svg {
+      width: 20px;
+      height: 20px;
+    }
+    
+    .search-bar {
+      margin: 12px 16px;
+      padding: 10px 12px;
+      background: var(--card-bg);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .search-bar svg {
+      width: 16px;
+      height: 16px;
+      color: var(--tertiary-text);
+    }
+    
+    .search-bar input {
+      flex: 1;
+      border: none;
+      outline: none;
+      font-size: 14px;
+      background: transparent;
+      color: var(--primary-text);
+    }
+    
+    .search-bar input::placeholder {
+      color: var(--tertiary-text);
+    }
+    
+    .list-container {
+      padding: 0 16px;
+    }
+    
+    .list-item {
+      background: var(--card-bg);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .list-item:active {
+      background-color: #F2F3F5;
+    }
+    
+    .list-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    
+    .list-item-title {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--primary-text);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .list-item-time {
+      font-size: 12px;
+      color: var(--tertiary-text);
+      margin-left: 12px;
+      flex-shrink: 0;
+    }
+    
+    .list-item-subtitle {
+      font-size: 14px;
+      color: var(--secondary-text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .customer-card {
+      margin: 16px;
+      padding: 16px;
+      background: var(--card-bg);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .customer-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #3370FF 0%, #7C3AED 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 18px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    
+    .customer-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .customer-name {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--primary-text);
+      margin-bottom: 4px;
+    }
+    
+    .customer-matter {
+      font-size: 14px;
+      color: var(--secondary-text);
+      margin-bottom: 4px;
+    }
+    
+    .customer-count {
+      font-size: 12px;
+      color: var(--tertiary-text);
+    }
+    
+    .timeline-container {
+      padding: 0 16px;
+    }
+    
+    .timeline-item {
+      position: relative;
+      padding-left: 24px;
+      padding-bottom: 24px;
+    }
+    
+    .timeline-item:last-child {
+      padding-bottom: 0;
+    }
+    
+    .timeline-dot {
+      position: absolute;
+      left: 0;
+      top: 4px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--tertiary-text);
+    }
+    
+    .timeline-item:first-child .timeline-dot {
+      background: var(--primary-color);
+    }
+    
+    .timeline-line {
+      position: absolute;
+      left: 5px;
+      top: 20px;
+      width: 2px;
+      height: calc(100% - 16px);
+      background: var(--border-color);
+    }
+    
+    .timeline-item:last-child .timeline-line {
+      display: none;
+    }
+    
+    .timeline-content {
+      background: var(--card-bg);
+      border-radius: 8px;
+      padding: 16px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .timeline-content:active {
+      background-color: #F2F3F5;
+    }
+    
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .timeline-date {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--primary-text);
+    }
+    
+    .timeline-time-method {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .timeline-time {
+      font-size: 12px;
+      color: var(--tertiary-text);
+    }
+    
+    .timeline-method {
+      font-size: 12px;
+      color: var(--primary-color);
+      background: rgba(51, 112, 255, 0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    
+    .timeline-section {
+      margin-bottom: 12px;
+    }
+    
+    .timeline-section:last-child {
+      margin-bottom: 0;
+    }
+    
+    .timeline-label {
+      font-size: 12px;
+      color: var(--tertiary-text);
+      margin-bottom: 4px;
+    }
+    
+    .timeline-value {
+      font-size: 14px;
+      color: var(--primary-text);
+      line-height: 1.5;
+    }
+    
+    .timeline-value.danger {
+      color: var(--danger-color);
+    }
+    
+    .timeline-contact {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    
+    .timeline-contact-name {
+      font-size: 14px;
+      color: var(--primary-text);
+    }
+    
+    .timeline-contact-role {
+      font-size: 12px;
+      color: var(--secondary-text);
+    }
+    
+    .add-btn {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 24px;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(51, 112, 255, 0.3);
+    }
+    
+    .add-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+    
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      color: var(--tertiary-text);
+    }
+    
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+    
+    .empty-state p {
+      font-size: 14px;
+    }
+    
+    .loading {
+      display: flex;
+      justify-content: center;
+      padding: 40px;
+    }
+    
+    .loading-spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid var(--border-color);
+      border-top-color: var(--primary-color);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .auth-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: var(--bg-color);
+    }
+    
+    .auth-loading .loading-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--primary-color);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 16px;
+    }
+    
+    .auth-loading p {
+      color: var(--secondary-text);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div v-if="authLoading" class="auth-loading">
+      <div class="loading-spinner"></div>
+      <p>正在登录...</p>
+    </div>
+    
+    <template v-else-if="userId">
+      <list-page 
+        v-if="currentPage === 'list'" 
+        :records="filteredRecords"
+        :search-query="searchQuery"
+        @select="showDetail"
+        @search="searchQuery = $event"
+        @add="showAddModal = true"
+      ></list-page>
+      
+      <detail-page 
+        v-if="currentPage === 'detail'"
+        :customer="selectedCustomer"
+        :records="detailRecords"
+        @back="currentPage = 'list'"
+        @add="showAddModal = true"
+        @edit="openEditModal"
+      ></detail-page>
+      
+      <add-modal 
+        v-if="showAddModal"
+        :customer-name="selectedCustomer?.customer_name"
+        :follow-content="selectedCustomer?.follow_content"
+        @close="showAddModal = false"
+        @submit="addRecord"
+      ></add-modal>
+      
+      <edit-modal 
+        v-if="showEditModal"
+        :record="editingRecord"
+        @close="showEditModal = false"
+        @submit="updateRecord"
+        @delete="deleteRecord"
+      ></edit-modal>
+    </template>
+    
+    <div v-else class="auth-loading">
+      <p>登录失败，请刷新重试</p>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue
+    const apiBase = () => (window.APP_CONFIG && window.APP_CONFIG.apiPrefix) || '/api'
+    
+    const ListPage = {
+      props: ['records', 'searchQuery'],
+      emits: ['select', 'search', 'add'],
+      template: `
+        <div class="page">
+          <div class="nav-bar">
+            <div class="nav-back" style="visibility: hidden;"></div>
+            <div class="nav-title">跟进记录</div>
+            <div class="nav-action" style="visibility: hidden;"></div>
+          </div>
+          
+          <div class="search-bar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input 
+              type="text" 
+              placeholder="搜索客户或事项..." 
+              :value="searchQuery"
+              @input="$emit('search', $event.target.value)"
+            >
+          </div>
+          
+          <div class="list-container">
+            <div v-if="records.length === 0" class="empty-state">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+              </svg>
+              <p>暂无跟进记录</p>
+            </div>
+            
+            <div 
+              v-for="record in records" 
+              :key="record.id" 
+              class="list-item"
+              @click="$emit('select', record)"
+            >
+              <div class="list-item-header">
+                <div class="list-item-title">{{ record.customer_name }}</div>
+                <div class="list-item-time">{{ formatDate(record.follow_time) }}</div>
+              </div>
+              <div class="list-item-subtitle">{{ truncate(record.follow_content, 20) }}</div>
+            </div>
+          </div>
+        </div>
+      `,
+      methods: {
+        formatDate(dateStr) {
+          const date = new Date(dateStr)
+          const now = new Date()
+          const year = date.getFullYear()
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          
+          if (year === now.getFullYear()) {
+            return `${month}-${day}`
+          }
+          return `${year}-${month}-${day}`
+        },
+        truncate(str, len) {
+          if (!str) return ''
+          return str.length > len ? str.slice(0, len) + '...' : str
+        }
+      }
+    }
+    
+    const DetailPage = {
+      props: ['customer', 'records'],
+      emits: ['back', 'add', 'edit'],
+      computed: {
+        recordCount() {
+          return this.records.length
+        }
+      },
+      template: `
+        <div class="page">
+          <div class="nav-bar">
+            <div class="nav-back" @click="$emit('back')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </div>
+            <div class="nav-title">跟进历史</div>
+            <div class="nav-back" style="visibility: hidden;"></div>
+          </div>
+          
+          <div class="customer-card">
+            <div class="customer-avatar">{{ customer?.customer_name?.charAt(0) || '?' }}</div>
+            <div class="customer-info">
+              <div class="customer-name">{{ customer?.customer_name || '未知客户' }}</div>
+              <div class="customer-matter">{{ customer?.follow_content || '无事项' }}</div>
+              <div class="customer-count">共{{ recordCount }}次跟进</div>
+            </div>
+          </div>
+          
+          <div class="timeline-container">
+            <div v-for="(record, index) in records" :key="record.id" class="timeline-item">
+              <div class="timeline-dot"></div>
+              <div class="timeline-line"></div>
+              <div class="timeline-content" @click="$emit('edit', record)">
+                <div class="timeline-header">
+                  <div class="timeline-date">{{ formatDate(record.follow_time) }}</div>
+                  <div class="timeline-time-method">
+                    <span class="timeline-time">{{ formatTime(record.follow_time) }}</span>
+                    <span v-if="record.follow_method" class="timeline-method">{{ record.follow_method }}</span>
+                  </div>
+                </div>
+                
+                <div v-if="record.contact_person" class="timeline-section">
+                  <div class="timeline-label">联系人</div>
+                  <div class="timeline-contact">
+                    <span class="timeline-contact-name">{{ record.contact_person }}</span>
+                    <span v-if="record.contact_role" class="timeline-contact-role">{{ record.contact_role }}</span>
+                  </div>
+                </div>
+                
+                <div v-if="record.follow_goal" class="timeline-section">
+                  <div class="timeline-label">预期目标</div>
+                  <div class="timeline-value">{{ record.follow_goal }}</div>
+                </div>
+                
+                <div v-if="record.follow_result" class="timeline-section">
+                  <div class="timeline-label">实际结果</div>
+                  <div class="timeline-value">{{ record.follow_result }}</div>
+                </div>
+                
+                <div v-if="record.risk_content" class="timeline-section">
+                  <div class="timeline-label">存在风险</div>
+                  <div class="timeline-value danger">{{ record.risk_content }}</div>
+                </div>
+                
+                <div v-if="record.next_plan" class="timeline-section">
+                  <div class="timeline-label">下一步计划</div>
+                  <div class="timeline-value">{{ record.next_plan }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <button class="add-btn" @click="$emit('add')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            添加跟进记录
+          </button>
+        </div>
+      `,
+      methods: {
+        formatDate(dateStr) {
+          const date = new Date(dateStr)
+          const year = date.getFullYear()
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          return `${year}-${month}-${day}`
+        },
+        formatTime(dateStr) {
+          const date = new Date(dateStr)
+          const hours = String(date.getHours()).padStart(2, '0')
+          const minutes = String(date.getMinutes()).padStart(2, '0')
+          return `${hours}:${minutes}`
+        }
+      }
+    }
+    
+    const AddModal = {
+      props: ['customerName', 'followContent'],
+      emits: ['close', 'submit'],
+      data() {
+        return {
+          form: {
+            customer_name: this.customerName || '',
+            follow_content: this.followContent || '',
+            contact_person: '',
+            contact_role: '',
+            follow_method: '线上',
+            follow_goal: '',
+            follow_result: '',
+            risk_content: '',
+            next_plan: ''
+          }
+        }
+      },
+      template: `
+        <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: flex-end;" @click.self="$emit('close')">
+          <div style="width: 100%; background: white; border-radius: 16px 16px 0 0; max-height: 80vh; overflow-y: auto;">
+            <div style="padding: 16px; border-bottom: 1px solid #DEE0E3; display: flex; justify-content: space-between; align-items: center;">
+              <span style="color: #646A73; cursor: pointer;" @click="$emit('close')">取消</span>
+              <span style="font-weight: 500;">新建跟进记录</span>
+              <span style="color: #3370FF; cursor: pointer; font-weight: 500;" @click="submit">保存</span>
+            </div>
+            <div style="padding: 16px;">
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">客户名称</label>
+                <input v-model="form.customer_name" type="text" disabled style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: #F5F6F7; color: #8F959E;">
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">跟进事项</label>
+                <input v-model="form.follow_content" type="text" disabled style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: #F5F6F7; color: #8F959E;">
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">跟进方式 *</label>
+                <select v-model="form.follow_method" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: white;">
+                  <option>线上</option>
+                  <option>线下</option>
+                </select>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">联系人 *</label>
+                <input v-model="form.contact_person" type="text" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none;" placeholder="请输入联系人姓名">
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">联系人职务</label>
+                <input v-model="form.contact_role" type="text" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none;" placeholder="请输入联系人职务">
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">预期目标 *</label>
+                <textarea v-model="form.follow_goal" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; resize: none; height: 60px;" placeholder="请输入预期目标"></textarea>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">实际结果 *</label>
+                <textarea v-model="form.follow_result" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; resize: none; height: 60px;" placeholder="请输入实际结果"></textarea>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">存在风险</label>
+                <textarea v-model="form.risk_content" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; resize: none; height: 60px;" placeholder="请输入存在的风险（如有）"></textarea>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">下一步计划 *</label>
+                <textarea v-model="form.next_plan" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; resize: none; height: 60px;" placeholder="请输入下一步计划"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+      methods: {
+        submit() {
+          if (!this.form.contact_person) {
+            alert('请填写联系人')
+            return
+          }
+          if (!this.form.follow_goal) {
+            alert('请填写预期目标')
+            return
+          }
+          if (!this.form.follow_result) {
+            alert('请填写实际结果')
+            return
+          }
+          if (!this.form.next_plan) {
+            alert('请填写下一步计划')
+            return
+          }
+          this.$emit('submit', { ...this.form, follow_time: new Date().toISOString() })
+        }
+      }
+    }
+    
+    const EditModal = {
+      props: ['record'],
+      emits: ['close', 'submit', 'delete'],
+      data() {
+        return {
+          form: {
+            customer_name: this.record?.customer_name || '',
+            follow_content: this.record?.follow_content || '',
+            contact_person: this.record?.contact_person || '',
+            contact_role: this.record?.contact_role || '',
+            follow_method: this.record?.follow_method || '线上',
+            follow_goal: this.record?.follow_goal || '',
+            follow_result: this.record?.follow_result || '',
+            risk_content: this.record?.risk_content || '',
+            next_plan: this.record?.next_plan || '',
+            follow_time: this.record?.follow_time || new Date().toISOString()
+          }
+        }
+      },
+      template: `
+        <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: flex-end;" @click.self="$emit('close')">
+          <div style="width: 100%; background: white; border-radius: 16px 16px 0 0; max-height: 80vh; overflow-y: auto;">
+            <div style="padding: 16px; border-bottom: 1px solid #DEE0E3; display: flex; justify-content: space-between; align-items: center;">
+              <span style="color: #646A73; cursor: pointer;" @click="$emit('close')">取消</span>
+              <span style="font-weight: 500;">编辑跟进记录</span>
+              <span style="color: #3370FF; cursor: pointer; font-weight: 500;" @click="submit">保存</span>
+            </div>
+            <div style="padding: 16px;">
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">客户名称</label>
+                <input v-model="form.customer_name" type="text" disabled style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: #F5F6F7; color: #8F959E;">
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">跟进事项</label>
+                <input v-model="form.follow_content" type="text" disabled style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: #F5F6F7; color: #8F959E;">
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">跟进方式 *</label>
+                <select v-model="form.follow_method" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: white;">
+                  <option>线上</option>
+                  <option>线下</option>
+                </select>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">联系人 *</label>
+                <input v-model="form.contact_person" type="text" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none;" placeholder="请输入联系人姓名">
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">联系人职务</label>
+                <input v-model="form.contact_role" type="text" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none;" placeholder="请输入联系人职务">
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">预期目标 *</label>
+                <textarea v-model="form.follow_goal" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; resize: none; height: 60px;" placeholder="请输入预期目标"></textarea>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">实际结果 *</label>
+                <textarea v-model="form.follow_result" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; resize: none; height: 60px;" placeholder="请输入实际结果"></textarea>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">存在风险</label>
+                <textarea v-model="form.risk_content" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; resize: none; height: 60px;" placeholder="请输入存在的风险（如有）"></textarea>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">下一步计划 *</label>
+                <textarea v-model="form.next_plan" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; resize: none; height: 60px;" placeholder="请输入下一步计划"></textarea>
+              </div>
+              <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #DEE0E3;">
+                <button @click="$emit('delete')" style="width: 100%; padding: 12px; background: #FFF; border: 1px solid #FA5151; border-radius: 8px; color: #FA5151; font-size: 14px; cursor: pointer;">删除此记录</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+      methods: {
+        submit() {
+          if (!this.form.contact_person) {
+            alert('请填写联系人')
+            return
+          }
+          if (!this.form.follow_goal) {
+            alert('请填写预期目标')
+            return
+          }
+          if (!this.form.follow_result) {
+            alert('请填写实际结果')
+            return
+          }
+          if (!this.form.next_plan) {
+            alert('请填写下一步计划')
+            return
+          }
+          this.$emit('submit', { ...this.form })
+        }
+      }
+    }
+    
+    createApp({
+      components: { ListPage, DetailPage, AddModal, EditModal },
+      setup() {
+        const currentPage = ref('list')
+        const searchQuery = ref('')
+        const showAddModal = ref(false)
+        const showEditModal = ref(false)
+        const editingRecord = ref(null)
+        const selectedCustomer = ref(null)
+        const records = ref([])
+        const loading = ref(false)
+        const authLoading = ref(true)
+        const userId = ref(null)
+        const userInfo = ref(null)
+        const token = ref(null)
+        
+        function isFeishuEnv() {
+          const ua = navigator.userAgent.toLowerCase()
+          return ua.includes('feishu') || ua.includes('lark')
+        }
+        
+        async function initH5Bridge() {
+          return new Promise((resolve, reject) => {
+            if (window.h5sdk) {
+              window.h5sdk.ready(() => {
+                resolve()
+              })
+              window.h5sdk.error((err) => {
+                reject(err)
+              })
+            } else {
+              resolve()
+            }
+          })
+        }
+        
+        async function getAuthCode() {
+          if (!isFeishuEnv() || !window.h5sdk) {
+            return null
+          }
+          
+          return new Promise((resolve, reject) => {
+            window.h5sdk.biz.util.getAuthCode({
+              success: (res) => {
+                resolve(res.code)
+              },
+              fail: (err) => {
+                reject(err)
+              }
+            })
+          })
+        }
+        
+        async function feishuAuth() {
+          try {
+            await initH5Bridge()
+            const code = await getAuthCode()
+            
+            if (!code) {
+              const storedUserId = localStorage.getItem('userId')
+              const storedToken = localStorage.getItem('authToken')
+              if (storedUserId) {
+                userId.value = storedUserId
+                if (storedToken) token.value = storedToken
+              } else {
+                userId.value = 'demo_user'
+                localStorage.setItem('userId', 'demo_user')
+              }
+              authLoading.value = false
+              return
+            }
+            
+            const res = await fetch(apiBase() + '/feishu/auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code })
+            })
+            
+            const json = await res.json()
+            if (json.success) {
+              userId.value = json.data.userId
+              userInfo.value = json.data
+              localStorage.setItem('userId', json.data.userId)
+              if (json.data.token) {
+                token.value = json.data.token
+                localStorage.setItem('authToken', json.data.token)
+              } else {
+                localStorage.removeItem('authToken')
+              }
+            } else {
+              throw new Error(json.message)
+            }
+          } catch (err) {
+            if (typeof window !== 'undefined' && window.location?.hostname !== 'localhost') {
+              try { console.error('飞书认证失败:', err) } catch (_) {}
+            }
+            const storedUserId = localStorage.getItem('userId')
+            const storedToken = localStorage.getItem('authToken')
+            if (storedUserId) {
+              userId.value = storedUserId
+              if (storedToken) token.value = storedToken
+            } else {
+              userId.value = 'demo_user'
+              localStorage.setItem('userId', 'demo_user')
+            }
+          } finally {
+            authLoading.value = false
+          }
+        }
+        
+        function getAuthHeaders() {
+          const h = { 'Content-Type': 'application/json' }
+          const t = token.value || localStorage.getItem('authToken')
+          if (t) {
+            h['Authorization'] = 'Bearer ' + t
+          } else {
+            h['x-user-id'] = userId.value || ''
+          }
+          return h
+        }
+        
+        function clearAuthOn401(res, json) {
+          if (res.status === 401 || (json && !json.success && (json.message || '').includes('未登录'))) {
+            localStorage.removeItem('authToken')
+            token.value = null
+            userId.value = null
+          }
+        }
+        
+        async function fetchRecords() {
+          loading.value = true
+          try {
+            const res = await fetch(apiBase() + '/records', {
+              headers: getAuthHeaders()
+            })
+            const json = await res.json()
+            clearAuthOn401(res, json)
+            if (json.success) {
+              records.value = json.data
+            }
+          } catch (err) {
+            if (typeof window !== 'undefined' && window.location?.hostname !== 'localhost') {
+              try { console.error('获取记录失败:', err) } catch (_) {}
+            }
+          } finally {
+            loading.value = false
+          }
+        }
+        
+        onMounted(async () => {
+          await feishuAuth()
+          await fetchRecords()
+        })
+        
+        const filteredRecords = computed(() => {
+          const grouped = {}
+          records.value.forEach(r => {
+            const key = `${r.customer_id}_${r.follow_content}`
+            if (!grouped[key] || new Date(r.follow_time) > new Date(grouped[key].follow_time)) {
+              grouped[key] = r
+            }
+          })
+          
+          let result = Object.values(grouped).sort((a, b) => 
+            new Date(b.follow_time) - new Date(a.follow_time)
+          )
+          
+          if (searchQuery.value) {
+            const query = searchQuery.value.toLowerCase()
+            result = result.filter(r => 
+              r.customer_name.toLowerCase().includes(query) ||
+              r.follow_content.toLowerCase().includes(query)
+            )
+          }
+          
+          return result
+        })
+        
+        const detailRecords = computed(() => {
+          if (!selectedCustomer.value) return []
+          return records.value
+            .filter(r => 
+              r.customer_id === selectedCustomer.value.customer_id &&
+              r.follow_content === selectedCustomer.value.follow_content
+            )
+            .sort((a, b) => new Date(b.follow_time) - new Date(a.follow_time))
+        })
+        
+        function showDetail(record) {
+          selectedCustomer.value = record
+          currentPage.value = 'detail'
+        }
+        
+        async function addRecord(newRecord) {
+          try {
+            const customerId = selectedCustomer.value?.customer_id || `c${Date.now()}`
+            const res = await fetch(apiBase() + '/records', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                ...newRecord,
+                customer_id: customerId
+              })
+            })
+            const json = await res.json()
+            clearAuthOn401(res, json)
+            if (json.success) {
+              records.value.unshift(json.data)
+              showAddModal.value = false
+              if (currentPage.value === 'list') {
+                selectedCustomer.value = json.data
+                currentPage.value = 'detail'
+              }
+            } else {
+              alert(json.message || '添加失败')
+            }
+          } catch (err) {
+            console.error('添加记录失败:', err)
+            alert('添加失败')
+          }
+        }
+        
+        function openEditModal(record) {
+          editingRecord.value = record
+          showEditModal.value = true
+        }
+        
+        async function updateRecord(updatedRecord) {
+          try {
+            const res = await fetch(apiBase() + '/records/' + editingRecord.value.id, {
+              method: 'PUT',
+              headers: getAuthHeaders(),
+              body: JSON.stringify(updatedRecord)
+            })
+            const json = await res.json()
+            clearAuthOn401(res, json)
+            if (json.success) {
+              const index = records.value.findIndex(r => r.id === editingRecord.value.id)
+              if (index !== -1) {
+                records.value[index] = json.data
+              }
+              showEditModal.value = false
+              editingRecord.value = null
+            } else {
+              alert(json.message || '更新失败')
+            }
+          } catch (err) {
+            console.error('更新记录失败:', err)
+            alert('更新失败')
+          }
+        }
+        
+        async function deleteRecord() {
+          if (!editingRecord.value) return
+          if (!confirm('确定要删除这条跟进记录吗？')) return
+          
+          try {
+            const res = await fetch(apiBase() + '/records/' + editingRecord.value.id, {
+              method: 'DELETE',
+              headers: getAuthHeaders()
+            })
+            const json = await res.json()
+            clearAuthOn401(res, json)
+            if (json.success) {
+              const index = records.value.findIndex(r => r.id === editingRecord.value.id)
+              if (index !== -1) {
+                records.value.splice(index, 1)
+              }
+              showEditModal.value = false
+              editingRecord.value = null
+            } else {
+              alert(json.message || '删除失败')
+            }
+          } catch (err) {
+            console.error('删除记录失败:', err)
+            alert('删除失败')
+          }
+        }
+        
+        return {
+          currentPage,
+          searchQuery,
+          showAddModal,
+          showEditModal,
+          editingRecord,
+          selectedCustomer,
+          filteredRecords,
+          detailRecords,
+          showDetail,
+          addRecord,
+          openEditModal,
+          updateRecord,
+          deleteRecord,
+          authLoading,
+          userId,
+          userInfo
+        }
+      }
+    }).mount('#app')
+  </script>
+</body>
+</html>
