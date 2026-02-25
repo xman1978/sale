@@ -29,10 +29,10 @@ type OAuthUserInfo struct {
 	OpenID    string `json:"open_id"`    // 飞书 open_id
 	UnionID   string `json:"union_id"`   // 飞书 union_id
 	Name      string `json:"name"`       // 姓名
-	AvatarURL string `json:"avatar_url"`  // 头像
+	AvatarURL string `json:"avatar_url"` // 头像
 }
 
-// oauthTokenResp 获取 access_token 的响应
+// oauthTokenResp 获取 access_token 的响应（v1/access_token 含用户信息）
 type oauthTokenResp struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
@@ -41,6 +41,12 @@ type oauthTokenResp struct {
 		TokenType    string `json:"token_type"`
 		ExpiresIn    int    `json:"expires_in"`
 		RefreshToken string `json:"refresh_token"`
+		// 用户信息（v1 接口直接返回，无需再调 user_info）
+		Name      string `json:"name"`
+		OpenID    string `json:"open_id"`
+		UserID    string `json:"user_id"`    // 需权限，作为 open_id 的备选
+		UnionID   string `json:"union_id"`
+		AvatarURL string `json:"avatar_url"`
 	} `json:"data"`
 }
 
@@ -55,7 +61,7 @@ type appTokenResp struct {
 }
 
 // GetAppAccessToken 获取应用 access_token（内部自建应用）
-func GetAppAccessToken(ctx context.Context, cfg config.Feishu) (string, error) {
+func GetAppAccessToken(ctx context.Context, cfg config.FeishuApp) (string, error) {
 	appTokenCache.mu.Lock()
 	defer appTokenCache.mu.Unlock()
 
@@ -92,39 +98,48 @@ func GetAppAccessToken(ctx context.Context, cfg config.Feishu) (string, error) {
 	return appTokenCache.token, nil
 }
 
-// ExchangeCodeForUserToken 用授权码换用户 access_token
-func ExchangeCodeForUserToken(ctx context.Context, cfg config.Feishu, code string) (accessToken string, expiresIn int, refreshToken string, err error) {
-	appToken, err := GetAppAccessToken(ctx, cfg)
-	if err != nil {
-		return "", 0, "", err
+// ExchangeCodeForUserToken 用授权码换用户 access_token；redirect_uri 必须与授权请求时完全一致
+// 返回 userInfo 时可直接使用，无需再调 GetOAuthUserInfo
+func ExchangeCodeForUserToken(ctx context.Context, cfg config.FeishuApp, code, redirectURI string) (accessToken string, expiresIn int, refreshToken string, userInfo *OAuthUserInfo, err error) {
+	body := map[string]interface{}{
+		"grant_type":   "authorization_code",
+		"code":         code,
+		"app_id":       cfg.AppID,
+		"app_secret":   cfg.AppSecret,
 	}
-
-	body, _ := json.Marshal(map[string]string{
-		"grant_type": "authorization_code",
-		"code":       code,
-	})
-	req, err := http.NewRequestWithContext(ctx, "POST", feishuAPIBase+"/authen/v1/oidc/access_token", bytes.NewReader(body))
+	if redirectURI != "" {
+		body["redirect_uri"] = redirectURI
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, "POST", feishuAPIBase+"/authen/v1/access_token", bytes.NewReader(bodyBytes))
 	if err != nil {
-		return "", 0, "", err
+		return "", 0, "", nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+appToken)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", 0, "", fmt.Errorf("request user token: %w", err)
+		return "", 0, "", nil, fmt.Errorf("request user token: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var r oauthTokenResp
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return "", 0, "", fmt.Errorf("decode user token resp: %w", err)
+		return "", 0, "", nil, fmt.Errorf("decode user token resp: %w", err)
 	}
 	if r.Code != 0 {
-		return "", 0, "", fmt.Errorf("user token api error: %d %s", r.Code, r.Msg)
+		return "", 0, "", nil, fmt.Errorf("user token api error: %d %s", r.Code, r.Msg)
 	}
 
-	return r.Data.AccessToken, r.Data.ExpiresIn, r.Data.RefreshToken, nil
+	info := (*OAuthUserInfo)(nil)
+	if r.Data.AccessToken != "" && r.Data.UnionID != "" {
+		info = &OAuthUserInfo{
+			UnionID:   r.Data.UnionID,
+			Name:      r.Data.Name,
+			AvatarURL: r.Data.AvatarURL,
+		}
+	}
+	return r.Data.AccessToken, r.Data.ExpiresIn, r.Data.RefreshToken, info, nil
 }
 
 // GetOAuthUserInfo 通过用户 access_token 获取用户信息

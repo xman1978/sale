@@ -22,7 +22,9 @@ import (
 type Client interface {
 	Start(ctx context.Context, messageHandler MessageHandler) error
 	SendMessage(ctx context.Context, chatID, content string) error
-	GetUserInfo(ctx context.Context, userID string) (*UserInfo, error)
+	GetUserInfo(ctx context.Context, userID, userIDType string) (*UserInfo, error)
+	// ResolveToUnionID 当飞书事件仅含 open_id 时，通过 contact API 解析为 union_id（内部使用）
+	ResolveToUnionID(ctx context.Context, openID string) (unionID string, err error)
 }
 
 // MessageHandler 消息处理器接口
@@ -42,7 +44,8 @@ type Message struct {
 
 // UserInfo 用户信息
 type UserInfo struct {
-	UserID  string `json:"user_id"`
+	UserID  string `json:"user_id"`  // 传入的 user_id（open_id 或 union_id）
+	UnionID string `json:"union_id"` // 跨应用统一标识，contact API 返回
 	Name    string `json:"name"`
 	Mobile  string `json:"mobile"`
 	OrgName string `json:"org_name"`
@@ -114,14 +117,14 @@ func (c *processedEventsCache) cleanupLoop() {
 // FeishuClient 飞书客户端实现
 type FeishuClient struct {
 	client          *lark.Client
-	config          config.Feishu
+	config          config.FeishuApp
 	logger          logger.Logger
 	wsClient        *larkws.Client
 	processedEvents *processedEventsCache
 }
 
 // NewClient 创建飞书客户端
-func NewClient(cfg config.Feishu, logger logger.Logger) *FeishuClient {
+func NewClient(cfg config.FeishuApp, logger logger.Logger) *FeishuClient {
 	client := lark.NewClient(cfg.AppID, cfg.AppSecret)
 
 	return &FeishuClient{
@@ -132,18 +135,30 @@ func NewClient(cfg config.Feishu, logger logger.Logger) *FeishuClient {
 	}
 }
 
+// extractUnionID 从事件 UserId 提取 union_id，若无则用 open_id 解析（飞书事件有时仅含 open_id）
+func (c *FeishuClient) extractUnionID(ctx context.Context, uid *larkim.UserId) (string, error) {
+	if uid != nil && uid.UnionId != nil && *uid.UnionId != "" {
+		return *uid.UnionId, nil
+	}
+	if uid != nil && uid.OpenId != nil && *uid.OpenId != "" {
+		return c.ResolveToUnionID(ctx, *uid.OpenId)
+	}
+	return "", fmt.Errorf("event has no user_id (union_id or open_id)")
+}
+
 // Start 启动飞书客户端
 func (c *FeishuClient) Start(ctx context.Context, messageHandler MessageHandler) error {
 	// 创建事件处理器
-	eventHandler := dispatcher.NewEventDispatcher(c.config.VerificationToken, c.config.EncryptKey).
+	eventHandler := dispatcher.NewEventDispatcher("", "").
 		// 用户进入与机器人的会话
 		OnP2ChatAccessEventBotP2pChatEnteredV1(func(ctx context.Context, event *larkim.P2ChatAccessEventBotP2pChatEnteredV1) error {
-			c.logger.Info("User entered chat", "user_id", *event.Event.OperatorId.OpenId, "chat_id", *event.Event.ChatId)
-
-			userID := *event.Event.OperatorId.OpenId
-			chatID := *event.Event.ChatId
-
-			return messageHandler.HandleUserEnter(ctx, userID, chatID)
+			userID, err := c.extractUnionID(ctx, event.Event.OperatorId)
+			if err != nil {
+				c.logger.Error("Failed to extract union_id", "error", err)
+				return err
+			}
+			c.logger.Info("User entered chat", "user_id", userID, "chat_id", *event.Event.ChatId)
+			return messageHandler.HandleUserEnter(ctx, userID, *event.Event.ChatId)
 		}).
 		// 接收消息事件
 		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
@@ -157,7 +172,12 @@ func (c *FeishuClient) Start(ctx context.Context, messageHandler MessageHandler)
 				return nil
 			}
 
-			c.logger.Info("Received message", "user_id", *event.Event.Sender.SenderId.OpenId, "chat_id", *event.Event.Message.ChatId)
+			userID, err := c.extractUnionID(ctx, event.Event.Sender.SenderId)
+			if err != nil {
+				c.logger.Error("Failed to extract union_id", "error", err)
+				return err
+			}
+			c.logger.Info("Received message", "user_id", userID, "chat_id", *event.Event.Message.ChatId)
 
 			// 检查消息类型
 			if *event.Event.Message.MessageType != "text" {
@@ -181,14 +201,14 @@ func (c *FeishuClient) Start(ctx context.Context, messageHandler MessageHandler)
 			}
 
 			msg := &Message{
-				UserID:    *event.Event.Sender.SenderId.OpenId,
+				UserID:    userID,
 				ChatID:    *event.Event.Message.ChatId,
 				Content:   content["text"],
 				MessageID: *event.Event.Message.MessageId,
 				ChatType:  *event.Event.Message.ChatType,
 			}
 
-			err := messageHandler.HandleMessage(ctx, msg)
+			err = messageHandler.HandleMessage(ctx, msg)
 			if err == nil && dedupKey != "" {
 				c.processedEvents.markProcessed(dedupKey)
 			}
@@ -210,10 +230,11 @@ func (c *FeishuClient) Start(ctx context.Context, messageHandler MessageHandler)
 	return nil
 }
 
-// SendMessage 发送消息
+// SendMessage 发送文本消息
 func (c *FeishuClient) SendMessage(ctx context.Context, chatID, content string) error {
-	// 构建消息内容
+	// 构建消息内容，使用 json.Marshal 处理文本内容的转义，防止下面构造 json 结构体时报错
 	escapedContent, _ := json.Marshal(content)
+
 	msgContent := larkim.NewTextMsgBuilder().
 		TextLine(string(escapedContent)[1 : len(string(escapedContent))-1]).
 		Build()
@@ -253,12 +274,10 @@ func (c *FeishuClient) getOrgnameByOrgId(ctx context.Context, orgId string) (str
 	// 发起请求
 	resp, err := c.client.Contact.V3.Department.Get(ctx, req)
 	if err != nil {
-		fmt.Println(err)
-		return "", fmt.Errorf("获取组织失败: %w", err)
+		return "", fmt.Errorf("failed to get org name: %w", err)
 	}
 	if !resp.Success() {
-		fmt.Printf("logId: %s, error response: \n%s", resp.RequestId(), larkcore.Prettify(resp.CodeError))
-		return "", fmt.Errorf("获取组织失败: %d", resp.CodeError.Code)
+		return "", fmt.Errorf("failed to get org name: %d", resp.CodeError.Code)
 	}
 
 	return *resp.Data.Department.Name, nil
@@ -275,12 +294,10 @@ func (c *FeishuClient) getParentOrgNameByOrgId(ctx context.Context, orgId string
 
 	resp, err := c.client.Contact.V3.Department.Parent(ctx, req)
 	if err != nil {
-		fmt.Println(err)
-		return "", fmt.Errorf("获取父组织名称失败: %w", err)
+		return "", fmt.Errorf("failed to get parent org name: %w", err)
 	}
 	if !resp.Success() {
-		fmt.Printf("logId: %s, error response: \n%s", resp.RequestId(), larkcore.Prettify(resp.CodeError))
-		return "", fmt.Errorf("获取父组织名称失败: %d", resp.CodeError.Code)
+		return "", fmt.Errorf("failed to get parent org name: %s", larkcore.Prettify(resp.CodeError))
 	}
 
 	orgName := ""
@@ -292,11 +309,14 @@ func (c *FeishuClient) getParentOrgNameByOrgId(ctx context.Context, orgId string
 	return orgName, nil
 }
 
-// GetUserInfo 获取用户信息
-func (c *FeishuClient) GetUserInfo(ctx context.Context, userID string) (*UserInfo, error) {
+// GetUserInfo 获取用户信息；userIDType 为 "open_id" 或 "union_id"，表示 userID 的类型
+func (c *FeishuClient) GetUserInfo(ctx context.Context, userID, userIDType string) (*UserInfo, error) {
+	if userIDType == "" {
+		userIDType = "union_id"
+	}
 	req := larkcontact.NewGetUserReqBuilder().
 		UserId(userID).
-		UserIdType("open_id").
+		UserIdType(userIDType).
 		DepartmentIdType("open_department_id").
 		Build()
 
@@ -316,6 +336,9 @@ func (c *FeishuClient) GetUserInfo(ctx context.Context, userID string) (*UserInf
 		UserID: userID,
 		Name:   *user.Name,
 		Mobile: *user.Mobile,
+	}
+	if user.UnionId != nil && *user.UnionId != "" {
+		userInfo.UnionID = *user.UnionId
 	}
 
 	// 获取用户状态 0在职/1离职
@@ -350,6 +373,18 @@ func (c *FeishuClient) GetUserInfo(ctx context.Context, userID string) (*UserInf
 	}
 
 	return userInfo, nil
+}
+
+// ResolveToUnionID 将 open_id（机器人上下文）解析为 union_id，用于跨应用统一用户标识
+func (c *FeishuClient) ResolveToUnionID(ctx context.Context, openID string) (string, error) {
+	info, err := c.GetUserInfo(ctx, openID, "open_id")
+	if err != nil {
+		return "", err
+	}
+	if info.UnionID != "" {
+		return info.UnionID, nil
+	}
+	return openID, nil
 }
 
 // GetUserByMobile 通过手机号获取用户ID

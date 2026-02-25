@@ -39,8 +39,8 @@ func main() {
 	}
 	logger.Info("Database schema initialized successfully")
 
-	// 初始化飞书客户端
-	feishuClient := feishu.NewClient(cfg.Feishu, logger)
+	// 初始化飞书客户端：通过 WebSocket 连接飞书机器人（feishu.sale_agent），接收和发送消息
+	feishuClient := feishu.NewClient(cfg.Feishu.SaleAgent, logger)
 
 	// 初始化服务器
 	srv := server.New(cfg, db, feishuClient, logger)

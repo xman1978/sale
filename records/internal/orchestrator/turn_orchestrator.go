@@ -29,6 +29,7 @@ type TurnOrchestrator struct {
 	askingOtherCustomers string
 	outputtingConfirm    string
 	outputtingEnded      string // OUTPUTTING 阶段用户发非跟进信息时的友好提示
+	systemError          string
 }
 
 // NewTurnOrchestrator 创建对话轮次编排器
@@ -42,6 +43,7 @@ func NewTurnOrchestrator(
 	askingOtherCustomers string,
 	outputtingConfirm string,
 	outputtingEnded string,
+	systemError string,
 ) *TurnOrchestrator {
 
 	return &TurnOrchestrator{
@@ -54,6 +56,7 @@ func NewTurnOrchestrator(
 		askingOtherCustomers: askingOtherCustomers,
 		outputtingConfirm:    outputtingConfirm,
 		outputtingEnded:      outputtingEnded,
+		systemError:          systemError,
 	}
 }
 
@@ -152,11 +155,10 @@ func (o *TurnOrchestrator) ProcessTurn(ctx context.Context, userID, userInput st
 		}
 
 		// 7. 生成对话回复
-		var replyErr error
-		reply, replyErr = o.generateReply(txCtx, newRuntime, userInput)
-		if replyErr != nil {
-			o.logger.Error("Failed to generate reply", "error", replyErr)
-			reply = "抱歉，我遇到了一些问题，请稍后再试。"
+		reply, err = o.generateReply(txCtx, newRuntime, userInput)
+		if err != nil {
+			o.logger.Error("Failed to generate reply", "error", err)
+			reply = o.systemError
 		}
 
 		// 8. 持久化运行态快照（含原始对话内容，供后续大模型理解上下文）
@@ -784,7 +786,9 @@ func (o *TurnOrchestrator) generateReply(ctx context.Context, runtime *RuntimeCo
 
 	expectedField := o.getExpectedInfo(runtime.State)
 
-	return o.aiClient.GenerateDialogue(ctx, runtime.Status, focusCustomerName, expectedField, userInput, historyContext, summary, conversationHistory)
+	reply, err := o.aiClient.GenerateDialogue(ctx, runtime.Status, focusCustomerName, expectedField, userInput, historyContext, summary, conversationHistory)
+
+	return reply, err
 }
 
 // saveRuntimeSnapshot 保存运行态快照（含用户输入与助手回复，供后续大模型理解对话上下文）

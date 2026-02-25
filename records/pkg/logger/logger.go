@@ -48,6 +48,7 @@ func New(cfg config.Logging) Logger {
 	} else {
 		logger.SetFormatter(&logrus.TextFormatter{
 			FullTimestamp: true,
+			DisableQuote:  true, // 允许 stack 等字段中的 \n \t 正确换行和缩进，否则会被 %q 转义为字面量
 		})
 	}
 

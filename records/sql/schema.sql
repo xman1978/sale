@@ -7,7 +7,7 @@ SET search_path TO sale;
 -- 创建表
 -- 用户表
 CREATE TABLE IF NOT EXISTS users (
-    id VARCHAR(255) PRIMARY KEY,  -- 飞书用户open_id
+    id VARCHAR(255) PRIMARY KEY,  -- 飞书用户 union_id
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(255),
     status INTEGER NOT NULL DEFAULT 0, -- 0 在职/1 离职
@@ -83,17 +83,4 @@ CREATE INDEX IF NOT EXISTS idx_dialogs_session_id ON dialogs(session_id);
 CREATE INDEX IF NOT EXISTS idx_dialogs_turn_index ON dialogs(session_id, turn_index);
 CREATE INDEX IF NOT EXISTS idx_follow_records_user_id ON follow_records(user_id);
 CREATE INDEX IF NOT EXISTS idx_follow_records_customer_id ON follow_records(customer_id);
-
--- demo_user（非飞书环境下使用）
-INSERT INTO sale.users (id, name, orgname, status) VALUES ('demo_user', 'Demo User', '', 0) ON CONFLICT (id) DO NOTHING;
-
--- 兼容已有库：为 users 添加 avatar_url
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'sale' AND table_name = 'users') THEN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'sale' AND table_name = 'users' AND column_name = 'avatar_url') THEN
-            ALTER TABLE sale.users ADD COLUMN avatar_url VARCHAR(500);
-        END IF;
-    END IF;
-END $$;
 

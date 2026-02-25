@@ -75,7 +75,7 @@ func New(
 
 	// 初始化编排器
 	orch := orchestrator.NewTurnOrchestrator(db, aiClient, ruleEngine, repo, outputWorker, logger,
-		cfg.Messages.AskingOtherCustomers, cfg.Messages.OutputtingConfirm, cfg.Messages.OutputtingEnded)
+		cfg.Messages.AskingOtherCustomers, cfg.Messages.OutputtingConfirm, cfg.Messages.OutputtingEnded, cfg.Messages.SystemError)
 
 	return &Server{
 		config:       cfg,
@@ -197,7 +197,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// HandleMessage 实现 feishu.MessageHandler 接口
+// HandleMessage 实现 feishu.MessageHandler 接口；msg.UserID 已为 union_id（由 feishu 客户端在事件入口解析）
 func (s *Server) HandleMessage(ctx context.Context, msg *feishu.Message) error {
 	s.logger.Info("Processing message", "user_id", msg.UserID, "chat_id", msg.ChatID, "content", msg.Content)
 
@@ -205,7 +205,7 @@ func (s *Server) HandleMessage(ctx context.Context, msg *feishu.Message) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if err := s.ensureUserExists(ctx, msg.UserID, false); err != nil {
+	if _, err := s.ensureUserExists(ctx, msg.UserID, false); err != nil {
 		s.logger.Error("Failed to ensure user exists", "error", err, "user_id", msg.UserID)
 		return s.feishuClient.SendMessage(ctx, msg.ChatID, s.config.Messages.SystemError)
 	}
@@ -241,11 +241,11 @@ func (s *Server) getUserLock(userID string) *sync.Mutex {
 	return newLock
 }
 
-// HandleUserEnter 实现 feishu.MessageHandler 接口
+// HandleUserEnter 实现 feishu.MessageHandler 接口；userID 已为 union_id（由 feishu 客户端在事件入口解析）
 func (s *Server) HandleUserEnter(ctx context.Context, userID, chatID string) error {
 	s.logger.Info("User entered chat", "user_id", userID, "chat_id", chatID)
 
-	if err := s.ensureUserExists(ctx, userID, true); err != nil {
+	if _, err := s.ensureUserExists(ctx, userID, true); err != nil {
 		s.logger.Error("Failed to ensure user exists", "error", err, "user_id", userID)
 		return s.feishuClient.SendMessage(ctx, chatID, s.config.Messages.SystemError)
 	}
@@ -293,28 +293,27 @@ func (s *Server) isFirstTimeToday(user *models.User) bool {
 	return user.StartLark.Before(todayStart)
 }
 
-// ensureUserExists 确保用户存在
+// ensureUserExists 确保用户存在；userID 必须为 union_id
 // checkStatus 是否检查在职状态、电话号码或组织名称发生变化，如果为 false，则不检查
-func (s *Server) ensureUserExists(ctx context.Context, userID string, checkStatus bool) error {
+func (s *Server) ensureUserExists(ctx context.Context, userID string, checkStatus bool) (string, error) {
 	repo := repository.New(s.db)
 
-	// 检查用户是否已存在
 	user, err := repo.GetUser(ctx, userID)
 	if err != nil {
-		return err
+		return "", err
 	}
-
-	// 如果不检查状态，且用户已存在，则直接返回
 	if !checkStatus && user != nil {
-		return nil
+		return user.ID, nil
 	}
 
-	// 从飞书获取用户信息
-	userInfo, err := s.feishuClient.GetUserInfo(ctx, userID)
+	userInfo, err := s.feishuClient.GetUserInfo(ctx, userID, "union_id")
 	if err != nil {
-		return err
+		return "", err
 	}
 
+	if !checkStatus && user != nil {
+		return user.ID, nil
+	}
 	if user != nil {
 		// 当在职状态、电话号码或组织名称发生变化时，更新用户信息
 		if user.Status != userInfo.Status || user.OrgName != userInfo.OrgName || user.Phone == nil || *user.Phone != userInfo.Mobile {
@@ -322,13 +321,13 @@ func (s *Server) ensureUserExists(ctx context.Context, userID string, checkStatu
 			user.Phone = &userInfo.Mobile
 			user.OrgName = userInfo.OrgName
 			if err := repo.UpdateUser(ctx, user); err != nil {
-				return fmt.Errorf("failed to update user: %w", err)
+				return "", fmt.Errorf("failed to update user: %w", err)
 			}
 		}
-		return nil // 用户已存在
+		return user.ID, nil
 	}
 
-	// 创建新用户
+	// 创建新用户（userID 为 union_id）
 	newUser := &models.User{
 		ID:      userID,
 		Name:    userInfo.Name,
@@ -342,11 +341,11 @@ func (s *Server) ensureUserExists(ctx context.Context, userID string, checkStatu
 	}
 
 	if err := repo.CreateUser(ctx, newUser); err != nil {
-		return fmt.Errorf("failed to create user: %w", err)
+		return "", fmt.Errorf("failed to create user: %w", err)
 	}
 
 	s.logger.Info("Created new user", "user_id", userID, "name", userInfo.Name)
-	return nil
+	return userID, nil
 }
 
 // healthHandler 健康检查处理器

@@ -408,6 +408,23 @@ type FollowRecordWithCustomerID struct {
 	CustomerIDStr string `db:"customer_id_str"`
 }
 
+// GetDistinctUserIDsInFollowRecords 返回 follow_records 表中所有不同的 user_id（用于调试）
+func (r *Repository) GetDistinctUserIDsInFollowRecords(ctx context.Context) ([]string, error) {
+	var rows []struct {
+		UserID string `db:"user_id"`
+	}
+	query := `SELECT DISTINCT user_id FROM follow_records ORDER BY user_id`
+	executor := r.getExecer(ctx)
+	if err := executor.SelectContext(ctx, &rows, query); err != nil {
+		return nil, fmt.Errorf("get distinct user_ids: %w", err)
+	}
+	ids := make([]string, len(rows))
+	for i, r := range rows {
+		ids[i] = r.UserID
+	}
+	return ids, nil
+}
+
 func (r *Repository) ListFollowRecordsForPage(ctx context.Context, userID string) ([]*FollowRecordWithCustomerID, error) {
 	var records []*FollowRecordWithCustomerID
 	// userID 为空时返回空列表（与 page 行为一致）

@@ -46,7 +46,7 @@ type updateRecordRequest struct {
 	NextPlan      string  `json:"next_plan"`
 }
 
-// pageUserIDFromRequest 从请求获取已认证用户 ID。优先验证 JWT；无 JWT 且 allow_demo_user 时用 demo_user。
+// pageUserIDFromRequest 从请求获取已认证用户 ID。优先验证 JWT；无 JWT 或失效时，若允许则回退到 x-user-id。
 // 返回 (userID, true) 表示已认证；(_, false) 表示需返回 401。
 func (s *Server) pageUserIDFromRequest(r *http.Request) (string, bool) {
 	secret := s.config.Server.JWTSecret
@@ -55,21 +55,29 @@ func (s *Server) pageUserIDFromRequest(r *http.Request) (string, bool) {
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 			uid, err := auth.Validate(secret, tokenString)
-			if err == nil {
+			if err == nil && !isInvalidUserID(uid) {
 				return uid, true
 			}
 		}
-		if s.config.Server.AllowDemoUser {
-			return "demo_user", true
+		if s.config.Server.AllowXUserIDFallback {
+			uid := r.Header.Get("x-user-id")
+			if uid != "" && !isInvalidUserID(uid) {
+				return uid, true
+			}
 		}
 		return "", false
 	}
 	// 未配置 JWT 时回退到 x-user-id（不推荐，存在冒充风险）
 	uid := r.Header.Get("x-user-id")
-	if uid == "" {
-		uid = "demo_user"
+	if uid == "" || isInvalidUserID(uid) {
+		return "", false
 	}
 	return uid, true
+}
+
+// isInvalidUserID 判断是否为无效/已废弃的用户 ID（如 demo_user）
+func isInvalidUserID(uid string) bool {
+	return uid == "demo_user"
 }
 
 // pageAPIRootHandler 处理 {api_prefix}/records（GET 列表、POST 新建）
@@ -110,12 +118,25 @@ func (s *Server) pageRecordsHandler(w http.ResponseWriter, r *http.Request) {
 		s.writePageJSON(w, http.StatusUnauthorized, pageAPIResponse{Success: false, Message: "未登录或登录已过期"})
 		return
 	}
+	s.logger.Info("pageRecordsHandler", "user_id", userID, "auth_header", r.Header.Get("Authorization") != "", "x_user_id", r.Header.Get("x-user-id"))
 	repo := repository.New(s.db)
+	// 打开跟进记录页时，若 users 表中无该用户，则根据飞书用户信息创建；userID 为 union_id
+	if _, err := s.ensureUserExists(r.Context(), userID, false); err != nil {
+		s.logger.Error("Ensure user exists from Feishu failed", "error", err, "user_id", userID)
+		s.writePageJSON(w, http.StatusInternalServerError, pageAPIResponse{Success: false, Message: "获取用户信息失败"})
+		return
+	}
 	records, err := repo.ListFollowRecordsForPage(r.Context(), userID)
 	if err != nil {
 		s.logger.Error("List follow records for page failed", "error", err)
 		s.writePageJSON(w, http.StatusInternalServerError, pageAPIResponse{Success: false, Message: "查询记录失败"})
 		return
+	}
+	s.logger.Info("pageRecordsHandler: query result", "user_id", userID, "record_count", len(records))
+	if len(records) == 0 {
+		if ids, err := repo.GetDistinctUserIDsInFollowRecords(r.Context()); err == nil {
+			s.logger.Info("pageRecordsHandler: distinct user_ids in follow_records (for debug)", "user_ids", ids)
+		}
 	}
 
 	data := make([]map[string]interface{}, len(records))
@@ -143,7 +164,7 @@ func (s *Server) pageRecordsCreateHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	repo := repository.New(s.db)
-	if err := repo.EnsureUserExists(r.Context(), userID); err != nil {
+	if _, err := s.ensureUserExists(r.Context(), userID, false); err != nil {
 		s.logger.Error("Ensure user exists failed", "error", err, "user_id", userID)
 		s.writePageJSON(w, http.StatusInternalServerError, pageAPIResponse{Success: false, Message: "创建记录失败"})
 		return

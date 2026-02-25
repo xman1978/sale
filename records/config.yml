@@ -14,8 +14,14 @@ database:
 
 # 飞书配置
 feishu:
-  app_id: cli_a9f3c3be1b785bb4
-  app_secret: ZDtNaNcuuaPehoc8FOAiXbtyZ5ZKa5sQ
+  sale_agent: # 销售助手机器人应用
+    app_id: cli_a9f3c3be1b785bb4
+    app_secret: ZDtNaNcuuaPehoc8FOAiXbtyZ5ZKa5sQ
+  sale_logs: # 飞书网页应用（在飞书中打开的静态页 records/pages/index.html），OAuth 登录用
+    app_id: cli_a912dc347af8dcd3
+    app_secret: dVNugBC9FT3pPMNXfTX0uXx3nZTs6enb
+    # redirect_uri 必须与飞书开放平台「安全设置」中配置的重定向 URL 完全一致
+    redirect_uri: https://gw.whir.net/sale/logs/index.html
 
 # AI模型配置
 ai:
@@ -51,9 +57,9 @@ server:
   web_prefix: /sale/logs
   # JWT 签名密钥，page API 会话认证；设置后需飞书 OAuth 获取 token，空则用 x-user-id（有冒充风险）
   # 生产环境务必设置 32+ 位随机字符串，如: openssl rand -base64 32
-  jwt_secret: ''
-  # 是否允许 demo_user 回退（开发 true，生产 false）
-  allow_demo_user: true
+  jwt_secret: 'Bwaik/k+86LpiIq77Gk791hd7YCtP67HOKDG89QtZTM='
+  # JWT 缺失或失效时，是否允许使用 x-user-id 回退；飞书内嵌页 getAuthCode 可能不可用，建议 true
+  allow_x_user_id_fallback: true
 
 # 日志配置
 logging:
@@ -169,7 +175,7 @@ prompts:
       2）用户明确表示要结束本次对话
     - 任何情况下，都不要因为信息不完整而中断对话
     客户跟进信息包括：客户名称、联系人、联系方式、跟进时间、跟进方式、跟进内容、跟进目标、跟进结果、下一步计划
-    你不需要输出任何结构化信息，只需要返回要对用户说的话
+    你不需要输出任何结构化信息，不要输出 markdown 格式，只需要返回要对用户说的话
 
   dialogue_confirming: |
     你正处于 CONFIRMING（用户确认）阶段。
@@ -245,7 +251,7 @@ prompts:
 
 messages:
   new_user: |
-    嗨，你好呀！我是你的销售小助理。
+    嗨，你好呀！我是你的【小助理】。
     我可以帮你把每天的客户跟进情况整理记录下来，这样你就不用手写日志了。你只需要像聊天一样跟我讲讲今天都联系了哪些客户、聊了什么，我来帮你整理。
     咱们现在就开始吧？跟我说说你今天的工作情况~
 
@@ -255,14 +261,14 @@ messages:
 
   continue_session: |
     欢迎回来！上次我们聊到一半呢。
-    来，我们继续把之前那个客户的跟进情况聊完吧~
+    来，我们继续把之前那个客户跟进的情况聊完吧~
 
   new_dialog: |
-    欢迎回来！今天还有其他客户要跟我说说吗？
+    欢迎回来！今天还有其他客户跟进的情况要跟我说说吗？
 
   asking_other_customers: "好哒，还有其他客户要跟我说说吗？"
 
-  outputting_confirm: "好的，正在为您生成今天的跟进记录，感谢您的确认！"
+  outputting_confirm: "好的，正在为您生成今天的跟进记录，感谢您的确认！日志记录可以在“工作台 - 销售日志”中查看。"
 
   outputting_ended: "那就到这啦。如果有新的客户跟进情况需要整理，可以再找我~"
 

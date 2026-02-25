@@ -19,6 +19,19 @@ type Config struct {
 	Messages Messages `yaml:"messages"`
 }
 
+// Feishu 飞书配置
+type Feishu struct {
+	SaleAgent FeishuApp `yaml:"sale_agent"` // 销售助手机器人应用（WebSocket 连接）
+	SaleLogs  FeishuApp `yaml:"sale_logs"`  // 飞书网页应用（在飞书中打开的静态页 records/pages/index.html），OAuth 登录用
+}
+
+// FeishuApp 飞书应用配置
+type FeishuApp struct {
+	AppID       string `yaml:"app_id"`
+	AppSecret   string `yaml:"app_secret"`
+	RedirectURI string `yaml:"redirect_uri"` // sale_logs 必填：OAuth 回调地址，需与飞书开放平台配置完全一致
+}
+
 // Database 数据库配置
 type Database struct {
 	Host            string        `yaml:"host"`
@@ -31,14 +44,6 @@ type Database struct {
 	MaxOpenConns    int           `yaml:"max_open_conns"`
 	MaxIdleConns    int           `yaml:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
-}
-
-// Feishu 飞书配置
-type Feishu struct {
-	AppID             string `yaml:"app_id"`
-	AppSecret         string `yaml:"app_secret"`
-	VerificationToken string `yaml:"verification_token"`
-	EncryptKey        string `yaml:"encrypt_key"`
 }
 
 // AI AI模型配置
@@ -75,16 +80,16 @@ type Dialogue struct {
 
 // Server 服务器配置
 type Server struct {
-	Port           int           `yaml:"port"`
-	Host           string        `yaml:"host"`
-	ReadTimeout    time.Duration `yaml:"read_timeout"`
-	WriteTimeout   time.Duration `yaml:"write_timeout"`
-	IdleTimeout   time.Duration `yaml:"idle_timeout"`
-	StaticDir     string        `yaml:"static_dir"`      // 静态页面目录，相对于工作目录
-	APIPrefix     string        `yaml:"api_prefix"`     // API 接口路径前缀，如 /api
-	WebPrefix     string        `yaml:"web_prefix"`     // Web 页面路径前缀，如 / 或 /page
-	JWTSecret     string        `yaml:"jwt_secret"`     // JWT 签名密钥，用于 page API 会话；空则回退到 x-user-id（不安全）
-	AllowDemoUser bool          `yaml:"allow_demo_user"` // 是否允许 demo_user 回退（开发环境 true，生产环境 false）
+	Port                 int           `yaml:"port"`
+	Host                 string        `yaml:"host"`
+	ReadTimeout          time.Duration `yaml:"read_timeout"`
+	WriteTimeout         time.Duration `yaml:"write_timeout"`
+	IdleTimeout          time.Duration `yaml:"idle_timeout"`
+	StaticDir            string        `yaml:"static_dir"`               // 静态页面目录，相对于工作目录
+	APIPrefix            string        `yaml:"api_prefix"`               // API 接口路径前缀，如 /api
+	WebPrefix            string        `yaml:"web_prefix"`               // Web 页面路径前缀，如 / 或 /page
+	JWTSecret            string        `yaml:"jwt_secret"`               // JWT 签名密钥，用于 page API 会话；空则回退到 x-user-id（不安全）
+	AllowXUserIDFallback bool          `yaml:"allow_x_user_id_fallback"` // JWT 缺失或失效时，是否允许使用 x-user-id 回退（开发/调试用）
 }
 
 // Logging 日志配置
@@ -109,10 +114,10 @@ type System struct {
 
 // Prompts 提示词配置
 type Prompts struct {
-	IsCustomerFollowRelated    string `yaml:"is_customer_follow_related"`
-	IsUserConfirmation         string `yaml:"is_user_confirmation"`
-	IsUserNoMoreCustomers      string `yaml:"is_user_no_more_customers"`
-	SemanticAnalysis           string `yaml:"semantic_analysis"`
+	IsCustomerFollowRelated string `yaml:"is_customer_follow_related"`
+	IsUserConfirmation      string `yaml:"is_user_confirmation"`
+	IsUserNoMoreCustomers   string `yaml:"is_user_no_more_customers"`
+	SemanticAnalysis        string `yaml:"semantic_analysis"`
 	DialogueCollecting      string `yaml:"dialogue_collecting"`
 	DialogueConfirming      string `yaml:"dialogue_confirming"`
 	CustomerSummary         string `yaml:"customer_summary"`
