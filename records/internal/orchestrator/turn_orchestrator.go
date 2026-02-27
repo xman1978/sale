@@ -344,8 +344,16 @@ func (o *TurnOrchestrator) processWithRuleEngine(
 		}
 	}
 
-	// ASKING_OTHER_CUSTOMERS 阶段：用户表示没有其他客户时，进入 OUTPUTTING（归一与收尾）
+	// ASKING_OTHER_CUSTOMERS 阶段：超时 0.5 小时自动进入 OUTPUTTING，或用户表示没有其他客户时进入
 	if runtime.Status == models.StatusAskingOtherCustomers {
+		// 超时自动进入 outputting：处于 ASKING_OTHER_CUSTOMERS 超过 0.5 小时
+		if firstEntered, err := o.getFirstAskingOtherCustomersTime(ctx, runtime.SessionID); err == nil && !firstEntered.IsZero() {
+			if time.Since(firstEntered) >= 30*time.Minute {
+				newRuntime.Status = models.StatusOutputting
+				o.logger.Info("ASKING_OTHER_CUSTOMERS timeout (>=30min), auto-transitioning to OUTPUTTING")
+				return &newRuntime, nil
+			}
+		}
 		noMore, err := o.aiClient.IsUserNoMoreCustomers(ctx, userInput)
 		if err != nil {
 			o.logger.Error("IsUserNoMoreCustomers failed", "error", err)
@@ -509,6 +517,20 @@ func (o *TurnOrchestrator) getFirstFocusTimeForCustomer(ctx context.Context, ses
 		}
 	}
 	return time.Now()
+}
+
+// getFirstAskingOtherCustomersTime 获取首次进入 ASKING_OTHER_CUSTOMERS 状态的时间（用于超时自动进入 outputting）
+func (o *TurnOrchestrator) getFirstAskingOtherCustomersTime(ctx context.Context, sessionID uuid.UUID) (time.Time, error) {
+	dialogs, err := o.repo.GetDialogsBySession(ctx, sessionID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	for _, dialog := range dialogs {
+		if dialog.Status == models.StatusAskingOtherCustomers {
+			return dialog.CreatedAt, nil
+		}
+	}
+	return time.Time{}, nil
 }
 
 // handleConfirmingStageModifications 处理 CONFIRMING 阶段的字段修改
