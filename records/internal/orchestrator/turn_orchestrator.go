@@ -344,7 +344,8 @@ func (o *TurnOrchestrator) processWithRuleEngine(
 		}
 	}
 
-	// ASKING_OTHER_CUSTOMERS 阶段：超时 0.5 小时自动进入 OUTPUTTING，或用户表示没有其他客户时进入
+	// ASKING_OTHER_CUSTOMERS 阶段：超时 0.5 小时自动进入 OUTPUTTING，或用户表示没有其他客户时进入；否则用户说任何话都进入 COLLECTING
+	fromAskingOtherCustomersUserResponded := false
 	if runtime.Status == models.StatusAskingOtherCustomers {
 		// 超时自动进入 outputting：处于 ASKING_OTHER_CUSTOMERS 超过 0.5 小时
 		if firstEntered, err := o.getFirstAskingOtherCustomersTime(ctx, runtime.SessionID); err == nil && !firstEntered.IsZero() {
@@ -362,6 +363,8 @@ func (o *TurnOrchestrator) processWithRuleEngine(
 			o.logger.Info("User has no more customers, transitioning to OUTPUTTING")
 			return &newRuntime, nil
 		}
+		// 用户说了其他内容（不管说什么），后续应进入 COLLECTING
+		fromAskingOtherCustomersUserResponded = true
 	}
 
 	// 处理语义分析结果
@@ -420,6 +423,12 @@ func (o *TurnOrchestrator) processWithRuleEngine(
 	// 重新计算状态
 	if err := o.recalculateStates(ctx, &newRuntime); err != nil {
 		return nil, err
+	}
+
+	// ASKING_OTHER_CUSTOMERS 阶段用户说了任何话（非超时、非“没有其他客户”）后，无论 recalculateStates 结果如何，都进入 COLLECTING
+	if fromAskingOtherCustomersUserResponded && newRuntime.Status == models.StatusAskingOtherCustomers {
+		newRuntime.Status = models.StatusCollecting
+		o.logger.Info("User responded in ASKING_OTHER_CUSTOMERS, transitioning to COLLECTING")
 	}
 
 	return &newRuntime, nil
@@ -715,8 +724,9 @@ func (o *TurnOrchestrator) recalculateStates(ctx context.Context, runtime *Runti
 		runtime.State = o.ruleEngine.DetermineState(customer, followRecord)
 	}
 
-	// 重新计算会话状态
-	newStatus := o.ruleEngine.DetermineStatus(customerStates)
+	// 重新计算会话状态（TurnIndex==1 表示首次进入会话）
+	isFirstSession := runtime.TurnIndex == 1
+	newStatus := o.ruleEngine.DetermineStatus(customerStates, isFirstSession)
 	// CONFIRMING 阶段用户提出修改后回到 COLLECTING，当全部客户再次 COMPLETE 时应直接回到 CONFIRMING 而非 ASKING_OTHER_CUSTOMERS
 	// 仅当仍有待处理客户（customerStates 非空）时才应用此覆盖；若已无客户（刚确认落库最后一个），应进入 ASKING_OTHER_CUSTOMERS
 	if newStatus == models.StatusAskingOtherCustomers && runtime.PendingReconfirm && len(customerStates) > 0 {

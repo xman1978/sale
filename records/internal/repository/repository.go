@@ -91,10 +91,10 @@ func (r *Repository) EnsureUserFromOAuth(ctx context.Context, userID, name strin
 	}
 	if user == nil {
 		u := &models.User{
-			ID:       userID,
-			Name:     name,
-			OrgName:  "",
-			Status:   0,
+			ID:        userID,
+			Name:      name,
+			OrgName:   "",
+			Status:    0,
 			AvatarURL: avatarURL,
 		}
 		return r.CreateUser(ctx, u)
@@ -510,4 +510,128 @@ func (r *Repository) DeleteFollowRecord(ctx context.Context, id uuid.UUID, userI
 	}
 	rows, _ := result.RowsAffected()
 	return rows > 0, nil
+}
+
+// Manager 页面与 records_scope：管理员可查看的日志范围
+
+// IsManager 查询该用户是否为管理员（在 records_scope 中作为 manager_id 存在）
+func (r *Repository) IsManager(ctx context.Context, userID string) (bool, error) {
+	var n int
+	query := `SELECT 1 FROM records_scope WHERE manager_id = $1 LIMIT 1`
+	executor := r.getExecer(ctx)
+	err := executor.GetContext(ctx, &n, query, userID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("is manager: %w", err)
+	}
+	return true, nil
+}
+
+// GetManagerScopeUserIDs 返回该管理员可查看的 user_id 列表。
+// user_id 列存储逗号分隔的字符串：若为 '0' 表示全部，否则解析为 id 列表。
+func (r *Repository) GetManagerScopeUserIDs(ctx context.Context, managerID string) ([]string, error) {
+	var userIDStr string
+	query := `SELECT user_id FROM records_scope WHERE manager_id = $1 LIMIT 1`
+	executor := r.getExecer(ctx)
+	if err := executor.GetContext(ctx, &userIDStr, query, managerID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("manager scope not found")
+		}
+		return nil, fmt.Errorf("get manager scope: %w", err)
+	}
+	s := strings.TrimSpace(userIDStr)
+	if s == "0" {
+		return nil, nil // 表示“全部”
+	}
+	if s == "" {
+		return []string{}, nil // 未配置则无人可看
+	}
+	parts := strings.Split(s, ",")
+	ids := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" && p != "0" {
+			ids = append(ids, p)
+		}
+	}
+	return ids, nil
+}
+
+// ManagerUser 用于 ListUsersForManager 返回
+type ManagerUser struct {
+	UserID      string `db:"user_id"`
+	Name        string `db:"name"`
+	RecordCount int    `db:"record_count"`
+}
+
+// ListUsersForManager 返回该管理员可查看的用户列表（user_id + name + 日志条数）。
+// 若 scope 为“全部”则从 users 取并统计每人 follow_records 数量；否则仅返回 scope 中的用户。
+func (r *Repository) ListUsersForManager(ctx context.Context, managerID string) ([]*ManagerUser, error) {
+	scopeIDs, err := r.GetManagerScopeUserIDs(ctx, managerID)
+	if err != nil {
+		return nil, err
+	}
+	executor := r.getExecer(ctx)
+	if scopeIDs == nil {
+		var list []*ManagerUser
+		query := `SELECT u.id AS user_id, COALESCE(u.name, u.id) AS name,
+			(SELECT COUNT(*) FROM follow_records fr WHERE fr.user_id = u.id) AS record_count
+			FROM users u ORDER BY u.name, u.id`
+		if err := executor.SelectContext(ctx, &list, query); err != nil {
+			return nil, fmt.Errorf("list users for manager (all): %w", err)
+		}
+		return list, nil
+	}
+	if len(scopeIDs) == 0 {
+		return []*ManagerUser{}, nil
+	}
+	query, args, err := sqlx.In(`SELECT u.id AS user_id, COALESCE(u.name, u.id) AS name,
+		(SELECT COUNT(*) FROM follow_records fr WHERE fr.user_id = u.id) AS record_count
+		FROM users u WHERE u.id IN (?) ORDER BY u.name, u.id`, scopeIDs)
+	if err != nil {
+		return nil, fmt.Errorf("build list users query: %w", err)
+	}
+	query = r.db.Rebind(query)
+	var list []*ManagerUser
+	if err := executor.SelectContext(ctx, &list, query, args...); err != nil {
+		return nil, fmt.Errorf("list users for manager: %w", err)
+	}
+	return list, nil
+}
+
+// CustomerFollowGroup 用于 ListCustomerFollowGroupsForManager 返回
+type CustomerFollowGroup struct {
+	CustomerName  string `db:"customer_name"`
+	FollowContent string `db:"follow_content"`
+}
+
+// ListCustomerFollowGroupsForManager 返回该用户的 (customer_name, follow_content) 分组列表
+func (r *Repository) ListCustomerFollowGroupsForManager(ctx context.Context, targetUserID string) ([]*CustomerFollowGroup, error) {
+	var list []*CustomerFollowGroup
+	query := `SELECT DISTINCT customer_name, COALESCE(follow_content, '') AS follow_content
+		FROM follow_records WHERE user_id = $1 ORDER BY customer_name, follow_content`
+	executor := r.getExecer(ctx)
+	if err := executor.SelectContext(ctx, &list, query, targetUserID); err != nil {
+		return nil, fmt.Errorf("list customer follow groups: %w", err)
+	}
+	return list, nil
+}
+
+// ListFollowRecordsForManager 返回指定用户、客户名、跟进事项的跟进记录列表，按 follow_time DESC
+func (r *Repository) ListFollowRecordsForManager(ctx context.Context, targetUserID, customerName, followContent string) ([]*FollowRecordWithCustomerID, error) {
+	var list []*FollowRecordWithCustomerID
+	query := `SELECT fr.id, fr.user_id, fr.customer_id, fr.customer_name, fr.contact_person, fr.contact_phone, fr.contact_role,
+		fr.follow_time, fr.follow_method, fr.follow_content, fr.follow_goal, fr.follow_result, fr.risk_content, fr.next_plan, fr.created_at,
+		c.id::text AS customer_id_str
+		FROM follow_records fr
+		JOIN customers c ON fr.customer_id = c.id
+		WHERE fr.user_id = $1 AND fr.customer_name = $2 AND COALESCE(fr.follow_content, '') = COALESCE($3, '')
+		ORDER BY fr.follow_time DESC`
+	executor := r.getExecer(ctx)
+	if err := executor.SelectContext(ctx, &list, query, targetUserID, customerName, followContent); err != nil {
+		return nil, fmt.Errorf("list follow records for manager: %w", err)
+	}
+	return list, nil
 }

@@ -84,3 +84,10 @@ CREATE INDEX IF NOT EXISTS idx_dialogs_turn_index ON dialogs(session_id, turn_in
 CREATE INDEX IF NOT EXISTS idx_follow_records_user_id ON follow_records(user_id);
 CREATE INDEX IF NOT EXISTS idx_follow_records_customer_id ON follow_records(customer_id);
 
+-- 管理员可查看的日志范围：manager_id 为可查看列表的用户，每管理员一行
+-- user_id 存储以逗号分隔的被查看用户 id；若为 '0' 表示可看所有用户
+CREATE TABLE IF NOT EXISTS records_scope (
+    manager_id VARCHAR(255) PRIMARY KEY REFERENCES users(id),
+    user_id    VARCHAR(2000) NOT NULL
+);
+

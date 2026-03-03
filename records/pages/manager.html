@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>销售日志查看</title>
+  <script>window.APP_CONFIG=window.APP_CONFIG||{apiPrefix:'/api'};</script>
+  <script src="config.js"></script>
+  <script src="https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js" crossorigin="anonymous"></script>
+  <script src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.16.js"></script>
+  <script src="https://sf1-scmcdn-cn.feishucdn.com/obj/feishu-static/op/fe/devtools_frontend/remote-debug-0.0.1-alpha.6.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #F5F6F7; color: #1F2329; min-height: 100vh; }
+    :root {
+      --primary-text: #1F2329;
+      --secondary-text: #646A73;
+      --tertiary-text: #8F959E;
+      --primary-color: #3370FF;
+      --border-color: #DEE0E3;
+      --bg-color: #F5F6F7;
+      --card-bg: #FFFFFF;
+      --danger-color: #FA5151;
+    }
+    .page { min-height: 100vh; padding-bottom: 20px; }
+    .nav-bar {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 56px; padding: 0 16px;
+      background: var(--card-bg); border-bottom: 1px solid var(--border-color);
+    }
+    .nav-back { width: 24px; height: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .nav-back svg { width: 20px; height: 20px; }
+    .nav-title { font-size: 18px; font-weight: 500; color: var(--primary-text); }
+    .nav-action { width: 24px; height: 24px; }
+    .list-container { padding: 0 16px; }
+    .list-item {
+      background: var(--card-bg); border-radius: 8px; padding: 16px; margin-bottom: 12px;
+      cursor: pointer; transition: background-color 0.2s;
+    }
+    .list-item:active { background-color: #F2F3F5; }
+    .list-item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+    .list-item-title { font-size: 16px; font-weight: 500; color: var(--primary-text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .list-item-subtitle { font-size: 14px; color: var(--secondary-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .customer-card {
+      margin: 16px; padding: 16px; background: var(--card-bg); border-radius: 8px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .customer-avatar {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: linear-gradient(135deg, #3370FF 0%, #7C3AED 100%);
+      display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; font-weight: 500; flex-shrink: 0;
+    }
+    .customer-info { flex: 1; min-width: 0; }
+    .customer-name { font-size: 16px; font-weight: 500; color: var(--primary-text); margin-bottom: 4px; }
+    .customer-matter { font-size: 14px; color: var(--secondary-text); margin-bottom: 4px; }
+    .customer-count { font-size: 12px; color: var(--tertiary-text); }
+    .timeline-container { padding: 0 16px; }
+    .timeline-item { position: relative; padding-left: 24px; padding-bottom: 24px; }
+    .timeline-item:last-child { padding-bottom: 0; }
+    .timeline-dot { position: absolute; left: 0; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--tertiary-text); }
+    .timeline-item:first-child .timeline-dot { background: var(--primary-color); }
+    .timeline-line { position: absolute; left: 5px; top: 20px; width: 2px; height: calc(100% - 16px); background: var(--border-color); }
+    .timeline-item:last-child .timeline-line { display: none; }
+    .timeline-content { background: var(--card-bg); border-radius: 8px; padding: 16px; }
+    .timeline-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
+    .timeline-date { font-size: 14px; font-weight: 500; color: var(--primary-text); }
+    .timeline-time-method { display: flex; align-items: center; gap: 8px; }
+    .timeline-time { font-size: 12px; color: var(--tertiary-text); }
+    .timeline-method { font-size: 12px; color: var(--primary-color); background: rgba(51, 112, 255, 0.1); padding: 2px 8px; border-radius: 4px; }
+    .timeline-section { margin-bottom: 12px; }
+    .timeline-section:last-child { margin-bottom: 0; }
+    .timeline-label { font-size: 12px; color: var(--tertiary-text); margin-bottom: 4px; }
+    .timeline-value { font-size: 14px; color: var(--primary-text); line-height: 1.5; }
+    .timeline-value.danger { color: var(--danger-color); }
+    .timeline-contact { display: flex; align-items: baseline; gap: 8px; }
+    .timeline-contact-name { font-size: 14px; color: var(--primary-text); }
+    .timeline-contact-role { font-size: 12px; color: var(--secondary-text); }
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--tertiary-text); }
+    .empty-state svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state p { font-size: 14px; }
+    .loading { display: flex; justify-content: center; padding: 40px; }
+    .loading-spinner { width: 24px; height: 24px; border: 2px solid var(--border-color); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .auth-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: var(--bg-color); }
+    .auth-loading .loading-spinner { width: 32px; height: 32px; border: 3px solid var(--border-color); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+    .auth-loading p { color: var(--secondary-text); font-size: 14px; }
+    .feishu-login-btn { display: inline-block; margin-top: 16px; padding: 12px 24px; background: var(--primary-color); color: white; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500; }
+    .forbidden-msg { padding: 24px; text-align: center; color: var(--secondary-text); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div v-if="authLoading" class="auth-loading">
+      <div class="loading-spinner"></div>
+      <p>正在登录...</p>
+    </div>
+
+    <template v-else-if="!userId">
+      <div class="auth-loading">
+        <p>请使用飞书登录</p>
+        <a v-if="feishuOAuthUrl" :href="feishuOAuthUrl" class="feishu-login-btn" target="_top">飞书登录</a>
+        <p v-else style="margin-top: 12px; font-size: 12px;">若在飞书内打开仍失败，请联系管理员检查应用配置</p>
+      </div>
+    </template>
+
+    <template v-else-if="managerForbidden">
+      <div class="page">
+        <div class="nav-bar">
+          <div class="nav-action" style="visibility: hidden;"></div>
+          <div class="nav-title">日志查看</div>
+          <div class="nav-action" style="visibility: hidden;"></div>
+        </div>
+        <div class="forbidden-msg">无权限查看</div>
+      </div>
+    </template>
+
+    <template v-else>
+      <!-- 一级：用户列表 -->
+      <div v-if="level === 'users'" class="page">
+        <div class="nav-bar">
+          <div class="nav-action" style="visibility: hidden;"></div>
+          <div class="nav-title">日志查看</div>
+          <div class="nav-action" style="visibility: hidden;"></div>
+        </div>
+        <div v-if="usersLoading" class="loading"><div class="loading-spinner"></div></div>
+        <div v-else class="list-container">
+          <div v-if="usersList.length === 0" class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"></path></svg>
+            <p>暂无可查看用户</p>
+          </div>
+          <div v-for="u in usersList" :key="u.user_id" class="list-item" @click="selectUser(u)">
+            <div class="list-item-header">
+              <div class="list-item-title">{{ u.name }}</div>
+            </div>
+            <div class="list-item-subtitle">日志 {{ u.record_count ?? 0 }} 条</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 二级：客户+跟进事项列表 -->
+      <div v-if="level === 'groups'" class="page">
+        <div class="nav-bar">
+          <div class="nav-back" @click="backToUsers">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </div>
+          <div class="nav-title">{{ selectedUser ? selectedUser.name : '客户与事项' }}</div>
+          <div class="nav-action" style="visibility: hidden;"></div>
+        </div>
+        <div v-if="groupsLoading" class="loading"><div class="loading-spinner"></div></div>
+        <div v-else class="list-container">
+          <div v-if="groupsList.length === 0" class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+            <p>暂无客户与跟进事项</p>
+          </div>
+          <div v-for="g in groupsList" :key="g.customer_name + '@' + g.follow_content" class="list-item" @click="selectGroup(g)">
+            <div class="list-item-header">
+              <div class="list-item-title">{{ g.customer_name }}</div>
+            </div>
+            <div class="list-item-subtitle">{{ g.follow_content || '（无事项）' }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 三级：跟进详情（只读时间线） -->
+      <div v-if="level === 'detail'" class="page">
+        <div class="nav-bar">
+          <div class="nav-back" @click="backToGroups">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </div>
+          <div class="nav-title">跟进详情</div>
+          <div class="nav-action" style="visibility: hidden;"></div>
+        </div>
+        <div class="customer-card">
+          <div class="customer-avatar">{{ (selectedGroup && selectedGroup.customer_name) ? selectedGroup.customer_name.charAt(0) : '?' }}</div>
+          <div class="customer-info">
+            <div class="customer-name">{{ selectedGroup ? selectedGroup.customer_name : '未知客户' }}</div>
+            <div class="customer-matter">{{ selectedGroup ? (selectedGroup.follow_content || '无事项') : '' }}</div>
+            <div class="customer-count">共 {{ detailRecords.length }} 次跟进</div>
+          </div>
+        </div>
+        <div v-if="detailLoading" class="loading"><div class="loading-spinner"></div></div>
+        <div v-else class="timeline-container">
+          <div v-for="(record, index) in detailRecords" :key="record.id" class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="timeline-line"></div>
+            <div class="timeline-content">
+              <div class="timeline-header">
+                <div class="timeline-date">{{ formatDate(record.follow_time) }}</div>
+                <div class="timeline-time-method">
+                  <span class="timeline-time">{{ formatTime(record.follow_time) }}</span>
+                  <span v-if="record.follow_method" class="timeline-method">{{ record.follow_method }}</span>
+                </div>
+              </div>
+              <div v-if="record.contact_person" class="timeline-section">
+                <div class="timeline-label">联系人</div>
+                <div class="timeline-contact">
+                  <span class="timeline-contact-name">{{ record.contact_person }}</span>
+                  <span v-if="record.contact_role" class="timeline-contact-role">{{ record.contact_role }}</span>
+                </div>
+              </div>
+              <div v-if="record.follow_goal" class="timeline-section">
+                <div class="timeline-label">预期目标</div>
+                <div class="timeline-value">{{ record.follow_goal }}</div>
+              </div>
+              <div v-if="record.follow_result" class="timeline-section">
+                <div class="timeline-label">实际结果</div>
+                <div class="timeline-value">{{ record.follow_result }}</div>
+              </div>
+              <div v-if="record.risk_content" class="timeline-section">
+                <div class="timeline-label">存在风险</div>
+                <div class="timeline-value danger">{{ record.risk_content }}</div>
+              </div>
+              <div v-if="record.next_plan" class="timeline-section">
+                <div class="timeline-label">下一步计划</div>
+                <div class="timeline-value">{{ record.next_plan }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue
+    const apiBase = () => (window.APP_CONFIG && window.APP_CONFIG.apiPrefix) || '/api'
+
+    function formatDate(dateStr) {
+      const date = new Date(dateStr)
+      const y = date.getFullYear(), m = String(date.getMonth() + 1).padStart(2, '0'), d = String(date.getDate()).padStart(2, '0')
+      return y + '-' + m + '-' + d
+    }
+    function formatTime(dateStr) {
+      const date = new Date(dateStr)
+      return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')
+    }
+
+    createApp({
+      setup() {
+        const authLoading = ref(true)
+        const userId = ref(null)
+        const token = ref(null)
+        const managerForbidden = ref(false)
+        const level = ref('users')
+        const usersList = ref([])
+        const usersLoading = ref(false)
+        const selectedUser = ref(null)
+        const groupsList = ref([])
+        const groupsLoading = ref(false)
+        const selectedGroup = ref(null)
+        const detailRecords = ref([])
+        const detailLoading = ref(false)
+
+        function isFeishuEnv() {
+          return /feishu|lark/i.test(navigator.userAgent)
+        }
+        function initH5Bridge() {
+          return new Promise((resolve) => {
+            if (window.h5sdk) window.h5sdk.ready(() => resolve())
+            else resolve()
+          })
+        }
+        function getCodeFromUrl() {
+          return new URLSearchParams(window.location.search).get('code')
+        }
+        function getAuthCode() {
+          const urlCode = getCodeFromUrl()
+          if (urlCode) {
+            history.replaceState({}, '', window.location.pathname)
+            return urlCode
+          }
+          if (!isFeishuEnv() || !window.h5sdk) return null
+          return new Promise((resolve, reject) => {
+            window.h5sdk.biz.util.getAuthCode({ success: (res) => resolve(res.code), fail: reject })
+          })
+        }
+        function getAuthHeaders() {
+          const h = { 'Content-Type': 'application/json' }
+          const t = token.value || localStorage.getItem('authToken')
+          const uid = userId.value || localStorage.getItem('userId')
+          if (t) h['Authorization'] = 'Bearer ' + t
+          if (uid && uid !== 'demo_user') h['x-user-id'] = uid
+          return h
+        }
+        function getFeishuRedirectUri() {
+          const configured = window.APP_CONFIG && window.APP_CONFIG.feishuRedirectUri
+          if (configured) return configured
+          return window.location.origin + (window.location.pathname || '/').replace(/\/?$/, '/')
+        }
+        const feishuOAuthUrl = computed(() => {
+          const appId = window.APP_CONFIG && window.APP_CONFIG.feishuAppId
+          if (!appId) return ''
+          return 'https://open.feishu.cn/open-apis/authen/v1/authorize?app_id=' + appId + '&redirect_uri=' + encodeURIComponent(getFeishuRedirectUri()) + '&state='
+        })
+
+        async function feishuAuth() {
+          try {
+            await initH5Bridge()
+            const code = await getAuthCode()
+            if (!code) {
+              const stored = localStorage.getItem('userId')
+              const storedToken = localStorage.getItem('authToken')
+              if (stored && stored !== 'demo_user') {
+                userId.value = stored
+                if (storedToken) token.value = storedToken
+              }
+              authLoading.value = false
+              return
+            }
+            const res = await fetch(apiBase() + '/feishu/auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code, redirect_uri: getFeishuRedirectUri() })
+            })
+            const json = await res.json()
+            if (json.success) {
+              userId.value = json.data.userId
+              token.value = json.data.token || null
+              localStorage.setItem('userId', json.data.userId)
+              if (json.data.token) localStorage.setItem('authToken', json.data.token)
+            } else {
+              throw new Error(json.message)
+            }
+          } catch (err) {
+            const stored = localStorage.getItem('userId')
+            const storedToken = localStorage.getItem('authToken')
+            if (stored && stored !== 'demo_user') {
+              userId.value = stored
+              if (storedToken) token.value = storedToken
+            }
+          } finally {
+            authLoading.value = false
+          }
+        }
+
+        async function fetchManagerUsers() {
+          usersLoading.value = true
+          managerForbidden.value = false
+          try {
+            const res = await fetch(apiBase() + '/manager/users', { headers: getAuthHeaders() })
+            const json = await res.json()
+            if (res.status === 403 || (json && !json.success && (json.message || '').includes('无权限'))) {
+              managerForbidden.value = true
+              usersList.value = []
+              return
+            }
+            if (res.status === 401) {
+              localStorage.removeItem('authToken')
+              token.value = null
+              userId.value = null
+              return
+            }
+            if (json.success && Array.isArray(json.data)) {
+              usersList.value = json.data
+            } else {
+              usersList.value = []
+            }
+          } catch (_) {
+            usersList.value = []
+          } finally {
+            usersLoading.value = false
+          }
+        }
+
+        function selectUser(u) {
+          selectedUser.value = u
+          level.value = 'groups'
+          groupsList.value = []
+          groupsLoading.value = true
+          fetch(apiBase() + '/manager/users/' + encodeURIComponent(u.user_id) + '/groups', { headers: getAuthHeaders() })
+            .then((res) => res.json())
+            .then((json) => {
+              if (json.success && Array.isArray(json.data)) groupsList.value = json.data
+            })
+            .finally(() => { groupsLoading.value = false })
+        }
+
+        function backToUsers() {
+          level.value = 'users'
+          selectedUser.value = null
+          groupsList.value = []
+        }
+
+        function selectGroup(g) {
+          selectedGroup.value = g
+          level.value = 'detail'
+          detailRecords.value = []
+          detailLoading.value = true
+          const uid = selectedUser.value && selectedUser.value.user_id
+          if (!uid) { detailLoading.value = false; return }
+          const q = 'customer_name=' + encodeURIComponent(g.customer_name || '') + '&follow_content=' + encodeURIComponent(g.follow_content || '')
+          fetch(apiBase() + '/manager/users/' + encodeURIComponent(uid) + '/records?' + q, { headers: getAuthHeaders() })
+            .then((res) => res.json())
+            .then((json) => {
+              if (json.success && Array.isArray(json.data)) detailRecords.value = json.data
+            })
+            .finally(() => { detailLoading.value = false })
+        }
+
+        function backToGroups() {
+          level.value = 'groups'
+          selectedGroup.value = null
+          detailRecords.value = []
+        }
+
+        onMounted(async () => {
+          await feishuAuth()
+          if (userId.value) await fetchManagerUsers()
+        })
+
+        return {
+          authLoading,
+          userId,
+          managerForbidden,
+          level,
+          usersList,
+          usersLoading,
+          selectedUser,
+          groupsList,
+          groupsLoading,
+          selectedGroup,
+          detailRecords,
+          detailLoading,
+          feishuOAuthUrl,
+          selectUser,
+          backToUsers,
+          selectGroup,
+          backToGroups,
+          formatDate,
+          formatTime
+        }
+      }
+    }).mount('#app')
+  </script>
+</body>
+</html>

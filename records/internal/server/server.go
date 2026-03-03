@@ -127,6 +127,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc(apiP+"/records", s.pageAPIRootHandler)
 	mux.HandleFunc(apiP+"/records/", s.pageAPISubHandler)
 
+	// Manager 页面 API（仅管理员，只读）
+	mux.HandleFunc(apiP+"/manager/users", s.managerUsersHandler)
+	mux.HandleFunc(apiP+"/manager/users/", s.managerUsersSubHandler)
+
 	// 静态页面（records/pages 目录）
 	staticDir := s.config.Server.StaticDir
 	if staticDir == "" {

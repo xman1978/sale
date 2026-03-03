@@ -55,12 +55,16 @@ func (e *RuleEngine) DetermineState(customer *models.Customer, followRecord *mod
 }
 
 // DetermineStatus 根据所有客户状态确定会话状态
-// 每聊完一个客户即确认落库：all complete → CONFIRMING；empty → ASKING_OTHER_CUSTOMERS（追问是否还有其他客户）
-func (e *RuleEngine) DetermineStatus(customerStates map[uuid.UUID]string) string {
-	e.logger.Debug("Determining status", "customer_states", customerStates)
+// 每聊完一个客户即确认落库：all complete → CONFIRMING；empty 且非首次会话 → ASKING_OTHER_CUSTOMERS（追问是否还有其他客户）
+func (e *RuleEngine) DetermineStatus(customerStates map[uuid.UUID]string, isFirstSession bool) string {
+	e.logger.Debug("Determining status", "customer_states", customerStates, "is_first_session", isFirstSession)
 
 	if len(customerStates) == 0 {
-		// 无待收集客户（已全部确认落库）→ 追问是否还有其他客户
+		// 首次进入会话：保持 COLLECTING 引导用户提供客户信息
+		// 非首次：追问是否还有其他客户
+		if isFirstSession {
+			return models.StatusCollecting
+		}
 		return models.StatusAskingOtherCustomers
 	}
 
