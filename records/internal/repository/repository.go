@@ -319,7 +319,7 @@ func (r *Repository) DeleteSession(ctx context.Context, sessionID uuid.UUID) err
 
 func (r *Repository) GetLatestFollowRecord(ctx context.Context, customerID uuid.UUID) (*models.FollowRecord, error) {
 	var record models.FollowRecord
-	query := `SELECT id, user_id, customer_id, customer_name, contact_person, contact_phone, contact_role, follow_time, follow_method, follow_content, follow_goal, follow_result, risk_content, next_plan, created_at FROM follow_records WHERE customer_id = $1 ORDER BY follow_time DESC LIMIT 1`
+	query := `SELECT id, user_id, customer_id, customer_name, contact_person, contact_phone, contact_role, follow_time, follow_method, follow_content, follow_goal, follow_result, risk_content, next_plan, ai, created_at FROM follow_records WHERE customer_id = $1 ORDER BY follow_time DESC LIMIT 1`
 	executor := r.getExecer(ctx)
 	err := executor.GetContext(ctx, &record, query, customerID)
 	if err != nil {
@@ -332,7 +332,7 @@ func (r *Repository) GetLatestFollowRecord(ctx context.Context, customerID uuid.
 }
 
 func (r *Repository) CreateFollowRecord(ctx context.Context, record *models.FollowRecord) error {
-	query := `INSERT INTO follow_records (id, user_id, customer_id, customer_name, contact_person, contact_phone, contact_role, follow_time, follow_method, follow_content, follow_goal, follow_result, risk_content, next_plan) VALUES (:id, :user_id, :customer_id, :customer_name, :contact_person, :contact_phone, :contact_role, :follow_time, :follow_method, :follow_content, :follow_goal, :follow_result, :risk_content, :next_plan)`
+	query := `INSERT INTO follow_records (id, user_id, customer_id, customer_name, contact_person, contact_phone, contact_role, follow_time, follow_method, follow_content, follow_goal, follow_result, risk_content, next_plan, ai) VALUES (:id, :user_id, :customer_id, :customer_name, :contact_person, :contact_phone, :contact_role, :follow_time, :follow_method, :follow_content, :follow_goal, :follow_result, :risk_content, :next_plan, :ai)`
 	executor := r.getExecer(ctx)
 	_, err := executor.NamedExecContext(ctx, query, record)
 	if err != nil {
@@ -342,7 +342,7 @@ func (r *Repository) CreateFollowRecord(ctx context.Context, record *models.Foll
 }
 
 func (r *Repository) UpdateFollowRecord(ctx context.Context, record *models.FollowRecord) error {
-	query := `UPDATE follow_records SET customer_name = :customer_name, contact_person = :contact_person, contact_phone = :contact_phone, contact_role = :contact_role, follow_time = :follow_time, follow_method = :follow_method, follow_content = :follow_content, follow_goal = :follow_goal, follow_result = :follow_result, risk_content = :risk_content, next_plan = :next_plan, updated_at = NOW() WHERE id = :id`
+	query := `UPDATE follow_records SET customer_name = :customer_name, contact_person = :contact_person, contact_phone = :contact_phone, contact_role = :contact_role, follow_time = :follow_time, follow_method = :follow_method, follow_content = :follow_content, follow_goal = :follow_goal, follow_result = :follow_result, risk_content = :risk_content, next_plan = :next_plan, ai = :ai, updated_at = NOW() WHERE id = :id`
 	executor := r.getExecer(ctx)
 	_, err := executor.NamedExecContext(ctx, query, record)
 	if err != nil {
@@ -353,7 +353,7 @@ func (r *Repository) UpdateFollowRecord(ctx context.Context, record *models.Foll
 
 func (r *Repository) GetSessionFollowRecords(ctx context.Context, sessionID uuid.UUID) ([]*models.FollowRecord, error) {
 	var records []*models.FollowRecord
-	query := `SELECT fr.id, fr.user_id, fr.customer_id, fr.customer_name, fr.contact_person, fr.contact_phone, fr.contact_role, fr.follow_time, fr.follow_method, fr.follow_content, fr.follow_goal, fr.follow_result, fr.risk_content, fr.next_plan, fr.created_at FROM follow_records fr JOIN dialogs d ON d.focus_customer_id = fr.customer_id WHERE d.session_id = $1 ORDER BY fr.follow_time DESC`
+	query := `SELECT fr.id, fr.user_id, fr.customer_id, fr.customer_name, fr.contact_person, fr.contact_phone, fr.contact_role, fr.follow_time, fr.follow_method, fr.follow_content, fr.follow_goal, fr.follow_result, fr.risk_content, fr.next_plan, fr.ai, fr.created_at FROM follow_records fr JOIN dialogs d ON d.focus_customer_id = fr.customer_id WHERE d.session_id = $1 ORDER BY fr.follow_time DESC`
 	executor := r.getExecer(ctx)
 	err := executor.SelectContext(ctx, &records, query, sessionID)
 	if err != nil {
@@ -364,7 +364,7 @@ func (r *Repository) GetSessionFollowRecords(ctx context.Context, sessionID uuid
 
 func (r *Repository) GetCustomerFollowRecords(ctx context.Context, customerID uuid.UUID) ([]*models.FollowRecord, error) {
 	var records []*models.FollowRecord
-	query := `SELECT id, user_id, customer_id, customer_name, contact_person, contact_phone, contact_role, follow_time, follow_method, follow_content, follow_goal, follow_result, risk_content, next_plan, created_at FROM follow_records WHERE customer_id = $1 ORDER BY follow_time DESC`
+	query := `SELECT id, user_id, customer_id, customer_name, contact_person, contact_phone, contact_role, follow_time, follow_method, follow_content, follow_goal, follow_result, risk_content, next_plan, ai, created_at FROM follow_records WHERE customer_id = $1 ORDER BY follow_time DESC`
 	executor := r.getExecer(ctx)
 	err := executor.SelectContext(ctx, &records, query, customerID)
 	if err != nil {
@@ -432,7 +432,7 @@ func (r *Repository) ListFollowRecordsForPage(ctx context.Context, userID string
 		return records, nil
 	}
 	query := `SELECT fr.id, fr.user_id, fr.customer_id, fr.customer_name, fr.contact_person, fr.contact_phone, fr.contact_role,
-		fr.follow_time, fr.follow_method, fr.follow_content, fr.follow_goal, fr.follow_result, fr.risk_content, fr.next_plan, fr.created_at,
+		fr.follow_time, fr.follow_method, fr.follow_content, fr.follow_goal, fr.follow_result, fr.risk_content, fr.next_plan, fr.ai, fr.created_at,
 		c.id::text AS customer_id_str
 		FROM follow_records fr
 		JOIN customers c ON fr.customer_id = c.id
@@ -480,6 +480,7 @@ func (r *Repository) CreateFollowRecordForPage(ctx context.Context, userID, cust
 		FollowResult:  &followResult,
 		RiskContent:   riskContent,
 		NextPlan:      &nextPlan,
+		AI:            false,
 	}
 	if err := r.CreateFollowRecord(ctx, record); err != nil {
 		return nil, err
@@ -489,7 +490,7 @@ func (r *Repository) CreateFollowRecordForPage(ctx context.Context, userID, cust
 
 func (r *Repository) GetFollowRecordByID(ctx context.Context, id uuid.UUID) (*models.FollowRecord, error) {
 	var record models.FollowRecord
-	query := `SELECT id, user_id, customer_id, customer_name, contact_person, contact_phone, contact_role, follow_time, follow_method, follow_content, follow_goal, follow_result, risk_content, next_plan, created_at FROM follow_records WHERE id = $1`
+	query := `SELECT id, user_id, customer_id, customer_name, contact_person, contact_phone, contact_role, follow_time, follow_method, follow_content, follow_goal, follow_result, risk_content, next_plan, ai, created_at FROM follow_records WHERE id = $1`
 	executor := r.getExecer(ctx)
 	err := executor.GetContext(ctx, &record, query, id)
 	if err != nil {
@@ -561,9 +562,10 @@ func (r *Repository) GetManagerScopeUserIDs(ctx context.Context, managerID strin
 
 // ManagerUser 用于 ListUsersForManager 返回
 type ManagerUser struct {
-	UserID      string `db:"user_id"`
-	Name        string `db:"name"`
-	RecordCount int    `db:"record_count"`
+	UserID       string     `db:"user_id"`
+	Name         string     `db:"name"`
+	RecordCount  int        `db:"record_count"`
+	LastRecordAt *time.Time `db:"last_record_at"` // 最近一次增加客户跟进记录的时间
 }
 
 // ListUsersForManager 返回该管理员可查看的用户列表（user_id + name + 日志条数）。
@@ -577,8 +579,9 @@ func (r *Repository) ListUsersForManager(ctx context.Context, managerID string) 
 	if scopeIDs == nil {
 		var list []*ManagerUser
 		query := `SELECT u.id AS user_id, COALESCE(u.name, u.id) AS name,
-			(SELECT COUNT(*) FROM follow_records fr WHERE fr.user_id = u.id) AS record_count
-			FROM users u ORDER BY u.name, u.id`
+			(SELECT COUNT(*) FROM follow_records fr WHERE fr.user_id = u.id) AS record_count,
+			(SELECT MAX(fr.created_at) FROM follow_records fr WHERE fr.user_id = u.id) AS last_record_at
+			FROM users u ORDER BY last_record_at DESC NULLS LAST, u.name, u.id`
 		if err := executor.SelectContext(ctx, &list, query); err != nil {
 			return nil, fmt.Errorf("list users for manager (all): %w", err)
 		}
@@ -588,8 +591,9 @@ func (r *Repository) ListUsersForManager(ctx context.Context, managerID string) 
 		return []*ManagerUser{}, nil
 	}
 	query, args, err := sqlx.In(`SELECT u.id AS user_id, COALESCE(u.name, u.id) AS name,
-		(SELECT COUNT(*) FROM follow_records fr WHERE fr.user_id = u.id) AS record_count
-		FROM users u WHERE u.id IN (?) ORDER BY u.name, u.id`, scopeIDs)
+		(SELECT COUNT(*) FROM follow_records fr WHERE fr.user_id = u.id) AS record_count,
+		(SELECT MAX(fr.created_at) FROM follow_records fr WHERE fr.user_id = u.id) AS last_record_at
+		FROM users u WHERE u.id IN (?) ORDER BY last_record_at DESC NULLS LAST, u.name, u.id`, scopeIDs)
 	if err != nil {
 		return nil, fmt.Errorf("build list users query: %w", err)
 	}
@@ -603,15 +607,18 @@ func (r *Repository) ListUsersForManager(ctx context.Context, managerID string) 
 
 // CustomerFollowGroup 用于 ListCustomerFollowGroupsForManager 返回
 type CustomerFollowGroup struct {
-	CustomerName  string `db:"customer_name"`
-	FollowContent string `db:"follow_content"`
+	CustomerName  string     `db:"customer_name"`
+	FollowContent string     `db:"follow_content"`
+	LastRecordAt  *time.Time `db:"last_record_at"` // 该客户最近一次增加跟进记录的时间
 }
 
-// ListCustomerFollowGroupsForManager 返回该用户的 (customer_name, follow_content) 分组列表
+// ListCustomerFollowGroupsForManager 返回该用户的客户名列表（按客户名去重），按最近一次跟进记录时间倒序
 func (r *Repository) ListCustomerFollowGroupsForManager(ctx context.Context, targetUserID string) ([]*CustomerFollowGroup, error) {
 	var list []*CustomerFollowGroup
-	query := `SELECT DISTINCT customer_name, COALESCE(follow_content, '') AS follow_content
-		FROM follow_records WHERE user_id = $1 ORDER BY customer_name, follow_content`
+	query := `SELECT customer_name, MAX(created_at) AS last_record_at
+		FROM follow_records WHERE user_id = $1
+		GROUP BY customer_name
+		ORDER BY last_record_at DESC NULLS LAST, customer_name`
 	executor := r.getExecer(ctx)
 	if err := executor.SelectContext(ctx, &list, query, targetUserID); err != nil {
 		return nil, fmt.Errorf("list customer follow groups: %w", err)
@@ -619,15 +626,16 @@ func (r *Repository) ListCustomerFollowGroupsForManager(ctx context.Context, tar
 	return list, nil
 }
 
-// ListFollowRecordsForManager 返回指定用户、客户名、跟进事项的跟进记录列表，按 follow_time DESC
+// ListFollowRecordsForManager 返回指定用户、客户名的跟进记录列表；若 followContent 非空则再按跟进事项过滤。按 follow_time DESC
 func (r *Repository) ListFollowRecordsForManager(ctx context.Context, targetUserID, customerName, followContent string) ([]*FollowRecordWithCustomerID, error) {
 	var list []*FollowRecordWithCustomerID
 	query := `SELECT fr.id, fr.user_id, fr.customer_id, fr.customer_name, fr.contact_person, fr.contact_phone, fr.contact_role,
-		fr.follow_time, fr.follow_method, fr.follow_content, fr.follow_goal, fr.follow_result, fr.risk_content, fr.next_plan, fr.created_at,
+		fr.follow_time, fr.follow_method, fr.follow_content, fr.follow_goal, fr.follow_result, fr.risk_content, fr.next_plan, fr.ai, fr.created_at,
 		c.id::text AS customer_id_str
 		FROM follow_records fr
 		JOIN customers c ON fr.customer_id = c.id
-		WHERE fr.user_id = $1 AND fr.customer_name = $2 AND COALESCE(fr.follow_content, '') = COALESCE($3, '')
+		WHERE fr.user_id = $1 AND fr.customer_name = $2
+		AND (COALESCE($3, '') = '' OR COALESCE(fr.follow_content, '') = $3)
 		ORDER BY fr.follow_time DESC`
 	executor := r.getExecer(ctx)
 	if err := executor.SelectContext(ctx, &list, query, targetUserID, customerName, followContent); err != nil {

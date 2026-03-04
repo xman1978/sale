@@ -77,6 +77,7 @@ type FollowRecord struct {
 	FollowResult  *string   `db:"follow_result" json:"follow_result,omitempty"`
 	RiskContent   *string   `db:"risk_content" json:"risk_content,omitempty"`
 	NextPlan      *string   `db:"next_plan" json:"next_plan,omitempty"`
+	AI            bool      `db:"ai" json:"ai"`
 	CreatedAt     time.Time `db:"created_at" json:"created_at"`
 }
 
@@ -165,6 +166,7 @@ type NormalizationRequest struct {
 const (
 	// 客户状态
 	StateCustomerName  = "CUSTOMER_NAME"
+	StateContactPerson = "CONTACT_PERSON"
 	StateFollowMethod  = "FOLLOW_METHOD"
 	StateFollowContent = "FOLLOW_CONTENT"
 	StateFollowGoal    = "FOLLOW_GOAL"
@@ -187,6 +189,7 @@ const (
 // StateFieldMap 状态到字段的映射
 var StateFieldMap = map[string]string{
 	StateCustomerName:  "customer_name",
+	StateContactPerson: "contact_person",
 	StateFollowMethod:  "follow_method",
 	StateFollowContent: "follow_content",
 	StateFollowGoal:    "follow_goal",
@@ -202,6 +205,7 @@ func GetFieldByState(state string) string {
 // StateFieldMap 状态到字段的映射
 var StateInfoMap = map[string]string{
 	StateCustomerName:  "客户名称",
+	StateContactPerson: "联系人",
 	StateFollowMethod:  "跟进方式（线上/线下）",
 	StateFollowContent: "跟进事项/项目",
 	StateFollowGoal:    "跟进期望达到的目标",

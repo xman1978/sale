@@ -51,6 +51,10 @@ func (e *RuleEngine) DetermineState(customer *models.Customer, followRecord *mod
 		return models.StateFollowMethod
 	}
 
+	if followRecord.ContactPerson == nil || *followRecord.ContactPerson == "" {
+		return models.StateContactPerson
+	}
+
 	return models.StateComplete
 }
 

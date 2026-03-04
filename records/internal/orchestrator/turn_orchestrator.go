@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"records/internal/ai"
@@ -112,7 +113,7 @@ func (o *TurnOrchestrator) ProcessTurn(ctx context.Context, userID, userInput st
 
 		// 4. 语义分析（如果需要）
 		var semanticResult *models.SemanticAnalysisResult
-		if o.ShouldCallSemanticAnalysis(txCtx, runtime.Status, userInput) {
+		if o.ShouldCallSemanticAnalysis(txCtx, runtime.Status) {
 			focusCustomerName := ""
 			if runtime.FocusCustomerID != nil {
 				customer, _ := o.repo.GetCustomer(txCtx, *runtime.FocusCustomerID)
@@ -178,22 +179,8 @@ func (o *TurnOrchestrator) ProcessTurn(ctx context.Context, userID, userInput st
 }
 
 // ShouldCallSemanticAnalysis 判断是否应该调用语义分析
-func (o *TurnOrchestrator) ShouldCallSemanticAnalysis(
-	ctx context.Context,
-	status string,
-	userInput string,
-) bool {
+func (o *TurnOrchestrator) ShouldCallSemanticAnalysis(ctx context.Context, status string) bool {
 	if status != models.StatusCollecting && status != models.StatusConfirming && status != models.StatusAskingOtherCustomers {
-		return false
-	}
-
-	// 检查是否和客户跟进相关
-	isCustomerFollowRelated, err := o.aiClient.IsCustomerFollowRelated(ctx, userInput)
-	if err != nil {
-		return false
-	}
-
-	if !isCustomerFollowRelated {
 		return false
 	}
 
@@ -383,9 +370,18 @@ func (o *TurnOrchestrator) processWithRuleEngine(
 			for _, item := range semanticResult.CustomerRefs {
 				// CONFIRMING 阶段：1) 用户确认 → 落库（见上方 IsUserConfirmation） 2) 用户修改 → 仅更新 pending_updates，待用户再次确认后才落库
 				if newRuntime.Status == models.StatusConfirming {
-					if newRuntime.FocusCustomerID != nil && len(item.FieldUpdates) > 0 {
-						if err := o.processFieldUpdates(ctx, &newRuntime, item.FieldUpdates); err != nil {
-							o.logger.Error("Failed to process CONFIRMING correction", "error", err)
+					if newRuntime.FocusCustomerID != nil {
+						// 语义中客户名与当前 focus 不同时，视为“把客户名改成 item.CustomerName”（AI 可能只填 CustomerName 不填 field_updates.customer_name）
+						if item.CustomerName != "" && item.CustomerName != focusCustomerName {
+							nameUpdates := map[string]interface{}{"customer_name": item.CustomerName}
+							if err := o.processFieldUpdates(ctx, &newRuntime, nameUpdates); err != nil {
+								o.logger.Error("Failed to process CONFIRMING customer name change", "error", err)
+							}
+						}
+						if len(item.FieldUpdates) > 0 {
+							if err := o.processFieldUpdates(ctx, &newRuntime, item.FieldUpdates); err != nil {
+								o.logger.Error("Failed to process CONFIRMING correction", "error", err)
+							}
 						}
 					}
 					continue
@@ -548,8 +544,32 @@ func (o *TurnOrchestrator) handleConfirmingStageModifications(
 	runtime *RuntimeContext,
 	fieldUpdates map[string]interface{},
 ) error {
+	// CONFIRMING 阶段联系人修改：直接写 Customer 表，落库时 build 从 customer 读即可
+	hasContact := false
+	contactInfo := make(map[string]interface{})
+	if v, exists := fieldUpdates["contact_person"]; exists && v != nil {
+		contactInfo["name"] = v
+		hasContact = true
+	}
+	if v, exists := fieldUpdates["contact_role"]; exists && v != nil {
+		contactInfo["role"] = v
+		hasContact = true
+	}
+	if v, exists := fieldUpdates["contact_phone"]; exists && v != nil {
+		contactInfo["phone"] = v
+		hasContact = true
+	}
+	if hasContact && runtime.FocusCustomerID != nil {
+		if err := o.writeContactPerson(ctx, *runtime.FocusCustomerID, contactInfo); err != nil {
+			o.logger.Error("Failed to write contact person in CONFIRMING", "error", err)
+		}
+	}
+
 	for fieldName, value := range fieldUpdates {
-		if fieldName == "risk" || fieldName == "contact_person" {
+		if fieldName == "risk" {
+			continue
+		}
+		if fieldName == "contact_person" || fieldName == "contact_role" || fieldName == "contact_phone" {
 			continue
 		}
 		// 检测到字段修改，执行回退逻辑
@@ -998,6 +1018,7 @@ func (o *TurnOrchestrator) buildFollowRecordFromCollectedData(customer *models.C
 		CustomerID:   customer.ID,
 		CustomerName: customer.Name,
 		FollowTime:   time.Now(), // 占位，落库时由 first_focus 时间补齐
+		AI:           true,
 	}
 	// 联系人信息从 Customer 表获取（handleSpecialFields 已通过 writeContactPerson 写入）
 	if customer.ContactPerson != nil {
@@ -1200,6 +1221,40 @@ func (o *TurnOrchestrator) handleFieldModificationInConfirming(
 		runtime.PendingUpdates[customerKey][key] = fmt.Sprintf("%v", newValue)
 		return nil
 	}
+
+	// 客户名修改：换成另一个客户（findOrCreateCustomer + 迁移 pending + 更新 Focus）
+	if modifiedField == "customer_name" {
+		newName := strings.TrimSpace(fmt.Sprintf("%v", newValue))
+		if newName == "" {
+			return nil
+		}
+		newCustomerID, err := o.findOrCreateCustomer(ctx, newName)
+		if err != nil {
+			return err
+		}
+		oldKey := runtime.FocusCustomerID.String()
+		newKey := newCustomerID.String()
+		if newCustomerID == *runtime.FocusCustomerID {
+			runtime.State = models.StateCustomerName
+			runtime.PendingReconfirm = true
+			return nil
+		}
+		if data, ok := runtime.PendingUpdates[oldKey]; ok && len(data) > 0 {
+			cp := make(map[string]interface{}, len(data))
+			for k, v := range data {
+				cp[k] = v
+			}
+			runtime.PendingUpdates[newKey] = cp
+		}
+		delete(runtime.PendingUpdates, oldKey)
+		runtime.FocusCustomerID = &newCustomerID
+		runtime.MentionedCustomerID = &newCustomerID
+		runtime.State = models.StateCustomerName
+		runtime.PendingReconfirm = true
+		o.logger.Info("Customer name changed in CONFIRMING: migrated pending to new customer", "new_name", newName, "new_customer_id", newCustomerID)
+		return nil
+	}
+
 	// 使用规则引擎确定需要回退的状态和清空的字段
 	newState, fieldsToClear := o.ruleEngine.HandleFieldModification(modifiedField)
 	if newState == "" {

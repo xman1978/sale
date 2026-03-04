@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"records/internal/repository"
 )
@@ -43,7 +44,11 @@ func (s *Server) managerUsersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	data := make([]map[string]interface{}, len(list))
 	for i, u := range list {
-		data[i] = map[string]interface{}{"user_id": u.UserID, "name": u.Name, "record_count": u.RecordCount}
+		var lastRecordAt interface{} = nil
+		if u.LastRecordAt != nil {
+			lastRecordAt = u.LastRecordAt.Format(time.RFC3339)
+		}
+		data[i] = map[string]interface{}{"user_id": u.UserID, "name": u.Name, "record_count": u.RecordCount, "last_record_at": lastRecordAt}
 	}
 	s.writePageJSON(w, http.StatusOK, pageAPIResponse{Success: true, Data: data})
 }
@@ -113,15 +118,19 @@ func (s *Server) managerUsersSubHandler(w http.ResponseWriter, r *http.Request) 
 		}
 		data := make([]map[string]interface{}, len(list))
 		for i, g := range list {
-			data[i] = map[string]interface{}{"customer_name": g.CustomerName, "follow_content": g.FollowContent}
+			var lastRecordAt interface{} = nil
+			if g.LastRecordAt != nil {
+				lastRecordAt = g.LastRecordAt.Format(time.RFC3339)
+			}
+			data[i] = map[string]interface{}{"customer_name": g.CustomerName, "last_record_at": lastRecordAt}
 		}
 		s.writePageJSON(w, http.StatusOK, pageAPIResponse{Success: true, Data: data})
 		return
 	case "records":
 		customerName := r.URL.Query().Get("customer_name")
 		followContent := r.URL.Query().Get("follow_content")
-		if customerName == "" && followContent == "" {
-			s.writePageJSON(w, http.StatusBadRequest, pageAPIResponse{Success: false, Message: "缺少 customer_name 或 follow_content"})
+		if customerName == "" {
+			s.writePageJSON(w, http.StatusBadRequest, pageAPIResponse{Success: false, Message: "缺少 customer_name"})
 			return
 		}
 		list, err := repo.ListFollowRecordsForManager(r.Context(), targetUserID, customerName, followContent)

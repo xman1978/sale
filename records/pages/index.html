@@ -162,6 +162,14 @@
       white-space: nowrap;
     }
     
+    .list-item-meta {
+      font-size: 12px;
+      color: var(--primary-color);
+      flex-shrink: 0;
+      margin-left: 8px;
+      white-space: nowrap;
+    }
+    
     .list-item-time {
       font-size: 12px;
       color: var(--tertiary-text);
@@ -307,6 +315,13 @@
       font-size: 12px;
       color: var(--primary-color);
       background: rgba(51, 112, 255, 0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .timeline-ai-tag {
+      font-size: 12px;
+      color: #8F959E;
+      background: rgba(143, 149, 158, 0.12);
       padding: 2px 8px;
       border-radius: 4px;
     }
@@ -465,7 +480,7 @@
     <template v-else-if="userId">
       <list-page 
         v-if="currentPage === 'list'" 
-        :records="filteredRecords"
+        :records="groupsList"
         :search-query="searchQuery"
         @select="showDetail"
         @search="searchQuery = $event"
@@ -534,7 +549,7 @@
             </svg>
             <input 
               type="text" 
-              placeholder="搜索客户或事项..." 
+              placeholder="搜索客户..." 
               :value="searchQuery"
               @input="$emit('search', $event.target.value)"
             >
@@ -549,16 +564,16 @@
             </div>
             
             <div 
-              v-for="record in records" 
-              :key="record.id" 
+              v-for="group in records" 
+              :key="group.customer_id" 
               class="list-item"
-              @click="$emit('select', record)"
+              @click="$emit('select', group)"
             >
               <div class="list-item-header">
-                <div class="list-item-title">{{ record.customer_name }}</div>
-                <div class="list-item-time">{{ formatDate(record.follow_time) }}</div>
+                <div class="list-item-title">{{ group.customer_name }}</div>
+                <div class="list-item-meta">更新时间 {{ group.last_record_at ? formatDateTime(group.last_record_at) : '暂无' }}</div>
               </div>
-              <div class="list-item-subtitle">{{ truncate(record.follow_content, 20) }}</div>
+              <div class="list-item-subtitle">点击查看跟进</div>
             </div>
           </div>
         </div>
@@ -576,10 +591,13 @@
           }
           return `${year}-${month}-${day}`
         },
-        truncate(str, len) {
-          if (!str) return ''
-          return str.length > len ? str.slice(0, len) + '...' : str
-        }
+        formatTime(dateStr) {
+          const date = new Date(dateStr)
+          return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')
+        },
+        formatDateTime(dateStr) {
+          return this.formatDate(dateStr) + ' ' + this.formatTime(dateStr)
+        },
       }
     }
     
@@ -607,7 +625,7 @@
             <div class="customer-avatar">{{ customer?.customer_name?.charAt(0) || '?' }}</div>
             <div class="customer-info">
               <div class="customer-name">{{ customer?.customer_name || '未知客户' }}</div>
-              <div class="customer-matter">{{ customer?.follow_content || '无事项' }}</div>
+              <div class="customer-matter">全部跟进</div>
               <div class="customer-count">共{{ recordCount }}次跟进</div>
             </div>
           </div>
@@ -622,6 +640,7 @@
                   <div class="timeline-time-method">
                     <span class="timeline-time">{{ formatTime(record.follow_time) }}</span>
                     <span v-if="record.follow_method" class="timeline-method">{{ record.follow_method }}</span>
+                    <span v-if="record.ai" class="timeline-ai-tag">AI 生成</span>
                   </div>
                 </div>
                 
@@ -831,12 +850,12 @@
             </div>
             <div style="padding: 16px;">
               <div style="margin-bottom: 16px;">
-                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">客户名称</label>
-                <input v-model="form.customer_name" type="text" disabled style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: #F5F6F7; color: #8F959E;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">客户名 *</label>
+                <input v-model="form.customer_name" type="text" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: white;" placeholder="请输入客户名">
               </div>
               <div style="margin-bottom: 16px;">
-                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">跟进事项</label>
-                <input v-model="form.follow_content" type="text" disabled style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: #F5F6F7; color: #8F959E;">
+                <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">跟进事项 *</label>
+                <input v-model="form.follow_content" type="text" style="width: 100%; padding: 10px 12px; border: 1px solid #DEE0E3; border-radius: 8px; font-size: 14px; outline: none; background: white;" placeholder="请输入跟进事项">
               </div>
               <div style="margin-bottom: 16px;">
                 <label style="display: block; font-size: 12px; color: #8F959E; margin-bottom: 8px;">跟进方式 *</label>
@@ -878,6 +897,14 @@
       `,
       methods: {
         submit() {
+          if (!this.form.customer_name?.trim()) {
+            alert('请填写客户名')
+            return
+          }
+          if (!this.form.follow_content?.trim()) {
+            alert('请填写跟进事项')
+            return
+          }
           if (!this.form.contact_person) {
             alert('请填写联系人')
             return
@@ -920,6 +947,26 @@
           return ua.includes('feishu') || ua.includes('lark')
         }
         
+        // 飞书内 H5 SDK 可能异步注入，等待一段时间再取 code
+        function waitForH5Sdk(timeoutMs) {
+          if (window.h5sdk) return Promise.resolve()
+          if (!isFeishuEnv() || !timeoutMs) return Promise.resolve()
+          const start = Date.now()
+          return new Promise((resolve) => {
+            const t = setInterval(() => {
+              if (window.h5sdk) {
+                clearInterval(t)
+                resolve()
+                return
+              }
+              if (Date.now() - start >= timeoutMs) {
+                clearInterval(t)
+                resolve()
+              }
+            }, 100)
+          })
+        }
+        
         async function initH5Bridge() {
           return new Promise((resolve, reject) => {
             if (window.h5sdk) {
@@ -946,10 +993,10 @@
             history.replaceState({}, '', window.location.pathname)
             return urlCode
           }
-          if (!isFeishuEnv() || !window.h5sdk) {
-            return null
-          }
-          
+          if (!isFeishuEnv()) return null
+          await waitForH5Sdk(3500)
+          if (!window.h5sdk) return null
+          await initH5Bridge()
           return new Promise((resolve, reject) => {
             window.h5sdk.biz.util.getAuthCode({
               success: (res) => {
@@ -964,7 +1011,6 @@
         
         async function feishuAuth() {
           try {
-            await initH5Bridge()
             const code = await getAuthCode()
             
             if (!code) {
@@ -1066,43 +1112,38 @@
           await fetchRecords()
         })
         
-        const filteredRecords = computed(() => {
-          let result = [...records.value].sort((a, b) => 
-            new Date(b.follow_time) - new Date(a.follow_time)
-          )
-          
-          // 按 (customer_id, follow_content) 分组，每个客户+事项组合只显示一条（取最新跟进时间）
-          const seen = new Set()
-          result = result.filter(r => {
-            const key = `${r.customer_id || ''}@${r.follow_content || ''}`
-            if (seen.has(key)) return false
-            seen.add(key)
-            return true
-          })
-          
+        // 按客户名分组，每组只显示一条（客户名 + 最近一次增加跟进记录时间），按该时间倒序；与 manager 一致
+        const groupsList = computed(() => {
+          const list = records.value
+          const byCustomer = new Map()
+          for (const r of list) {
+            const id = r.customer_id ?? ''
+            const recordAt = r.created_at || r.follow_time
+            if (!byCustomer.has(id)) {
+              byCustomer.set(id, { customer_id: r.customer_id, customer_name: r.customer_name || '未知客户', last_record_at: recordAt })
+            } else {
+              const prev = byCustomer.get(id)
+              if (new Date(recordAt) > new Date(prev.last_record_at)) prev.last_record_at = recordAt
+            }
+          }
+          let result = [...byCustomer.values()].map(g => ({ customer_id: g.customer_id, customer_name: g.customer_name, last_record_at: g.last_record_at }))
+          result.sort((a, b) => new Date(b.last_record_at || 0) - new Date(a.last_record_at || 0))
           if (searchQuery.value) {
             const query = searchQuery.value.toLowerCase()
-            result = result.filter(r => 
-              (r.customer_name || '').toLowerCase().includes(query) ||
-              (r.follow_content || '').toLowerCase().includes(query)
-            )
+            result = result.filter(g => (g.customer_name || '').toLowerCase().includes(query))
           }
-          
           return result
         })
         
         const detailRecords = computed(() => {
           if (!selectedCustomer.value) return []
           return records.value
-            .filter(r => 
-              r.customer_id === selectedCustomer.value.customer_id &&
-              r.follow_content === selectedCustomer.value.follow_content
-            )
+            .filter(r => r.customer_id === selectedCustomer.value.customer_id)
             .sort((a, b) => new Date(b.follow_time) - new Date(a.follow_time))
         })
         
-        function showDetail(record) {
-          selectedCustomer.value = record
+        function showDetail(group) {
+          selectedCustomer.value = { customer_id: group.customer_id, customer_name: group.customer_name }
           currentPage.value = 'detail'
         }
         
@@ -1137,7 +1178,7 @@
               records.value.unshift(json.data)
               showAddModal.value = false
               if (currentPage.value === 'list') {
-                selectedCustomer.value = json.data
+                selectedCustomer.value = { customer_id: json.data.customer_id, customer_name: json.data.customer_name }
                 currentPage.value = 'detail'
               }
             } else {
@@ -1230,7 +1271,7 @@
           editingRecord,
           selectedCustomer,
           savingRecord,
-          filteredRecords,
+          groupsList,
           detailRecords,
           showDetail,
           addRecord,

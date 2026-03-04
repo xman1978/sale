@@ -41,6 +41,7 @@
     .list-item:active { background-color: #F2F3F5; }
     .list-item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
     .list-item-title { font-size: 16px; font-weight: 500; color: var(--primary-text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .list-item-meta { font-size: 14px; color: var(--primary-color); flex-shrink: 0; margin-left: 8px; white-space: nowrap; }
     .list-item-subtitle { font-size: 14px; color: var(--secondary-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .customer-card {
       margin: 16px; padding: 16px; background: var(--card-bg); border-radius: 8px;
@@ -68,6 +69,7 @@
     .timeline-time-method { display: flex; align-items: center; gap: 8px; }
     .timeline-time { font-size: 12px; color: var(--tertiary-text); }
     .timeline-method { font-size: 12px; color: var(--primary-color); background: rgba(51, 112, 255, 0.1); padding: 2px 8px; border-radius: 4px; }
+    .timeline-ai-tag { font-size: 12px; color: #9109e6; background: rgba(143, 149, 158, 0.12); padding: 2px 8px; border-radius: 4px; }
     .timeline-section { margin-bottom: 12px; }
     .timeline-section:last-child { margin-bottom: 0; }
     .timeline-label { font-size: 12px; color: var(--tertiary-text); margin-bottom: 4px; }
@@ -132,32 +134,34 @@
           <div v-for="u in usersList" :key="u.user_id" class="list-item" @click="selectUser(u)">
             <div class="list-item-header">
               <div class="list-item-title">{{ u.name }}</div>
+              <div class="list-item-meta">更新时间 {{ u.last_record_at ? formatDateTime(u.last_record_at) : '暂无' }}</div>
             </div>
             <div class="list-item-subtitle">日志 {{ u.record_count ?? 0 }} 条</div>
           </div>
         </div>
       </div>
 
-      <!-- 二级：客户+跟进事项列表 -->
+      <!-- 二级：客户列表 -->
       <div v-if="level === 'groups'" class="page">
         <div class="nav-bar">
           <div class="nav-back" @click="backToUsers">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
           </div>
-          <div class="nav-title">{{ selectedUser ? selectedUser.name : '客户与事项' }}</div>
+          <div class="nav-title">{{ selectedUser ? selectedUser.name : '客户列表' }}</div>
           <div class="nav-action" style="visibility: hidden;"></div>
         </div>
         <div v-if="groupsLoading" class="loading"><div class="loading-spinner"></div></div>
         <div v-else class="list-container">
           <div v-if="groupsList.length === 0" class="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-            <p>暂无客户与跟进事项</p>
+            <p>暂无客户</p>
           </div>
-          <div v-for="g in groupsList" :key="g.customer_name + '@' + g.follow_content" class="list-item" @click="selectGroup(g)">
+          <div v-for="g in groupsList" :key="g.customer_name" class="list-item" @click="selectGroup(g)">
             <div class="list-item-header">
               <div class="list-item-title">{{ g.customer_name }}</div>
+              <div class="list-item-meta">更新时间 {{ g.last_record_at ? formatDateTime(g.last_record_at) : '暂无' }}</div>
             </div>
-            <div class="list-item-subtitle">{{ g.follow_content || '（无事项）' }}</div>
+            <div class="list-item-subtitle">点击查看跟进</div>
           </div>
         </div>
       </div>
@@ -175,7 +179,7 @@
           <div class="customer-avatar">{{ (selectedGroup && selectedGroup.customer_name) ? selectedGroup.customer_name.charAt(0) : '?' }}</div>
           <div class="customer-info">
             <div class="customer-name">{{ selectedGroup ? selectedGroup.customer_name : '未知客户' }}</div>
-            <div class="customer-matter">{{ selectedGroup ? (selectedGroup.follow_content || '无事项') : '' }}</div>
+            <div class="customer-matter">全部跟进</div>
             <div class="customer-count">共 {{ detailRecords.length }} 次跟进</div>
           </div>
         </div>
@@ -190,7 +194,12 @@
                 <div class="timeline-time-method">
                   <span class="timeline-time">{{ formatTime(record.follow_time) }}</span>
                   <span v-if="record.follow_method" class="timeline-method">{{ record.follow_method }}</span>
+                  <span v-if="record.ai" class="timeline-ai-tag">AI 生成</span>
                 </div>
+              </div>
+              <div v-if="record.follow_content" class="timeline-section">
+                <div class="timeline-label">跟进事项</div>
+                <div class="timeline-value">{{ record.follow_content }}</div>
               </div>
               <div v-if="record.contact_person" class="timeline-section">
                 <div class="timeline-label">联系人</div>
@@ -234,6 +243,9 @@
     function formatTime(dateStr) {
       const date = new Date(dateStr)
       return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')
+    }
+    function formatDateTime(dateStr) {
+      return formatDate(dateStr) + ' ' + formatTime(dateStr)
     }
 
     createApp({
@@ -389,7 +401,7 @@
           detailLoading.value = true
           const uid = selectedUser.value && selectedUser.value.user_id
           if (!uid) { detailLoading.value = false; return }
-          const q = 'customer_name=' + encodeURIComponent(g.customer_name || '') + '&follow_content=' + encodeURIComponent(g.follow_content || '')
+          const q = 'customer_name=' + encodeURIComponent(g.customer_name || '')
           fetch(apiBase() + '/manager/users/' + encodeURIComponent(uid) + '/records?' + q, { headers: getAuthHeaders() })
             .then((res) => res.json())
             .then((json) => {
@@ -428,7 +440,8 @@
           selectGroup,
           backToGroups,
           formatDate,
-          formatTime
+          formatTime,
+          formatDateTime
         }
       }
     }).mount('#app')

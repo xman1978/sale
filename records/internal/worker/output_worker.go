@@ -277,6 +277,7 @@ func (w *OutputWorker) buildFollowRecordFromPendingData(customer *models.Custome
 		CustomerID:   customer.ID,
 		CustomerName: customer.Name,
 		FollowTime:   time.Now(),
+		AI:           true,
 	}
 	if customer.ContactPerson != nil {
 		r.ContactPerson = customer.ContactPerson

@@ -15,23 +15,23 @@
 
 ### 2.1 页面布局
 
+列表**仅按客户名分组**，与 manager 页一致：每客户一行，不展示跟进事项与日期。
+
 ```
 ┌─────────────────────────────┐
 │  ←  跟进记录          [+]   │  ← 导航栏
 ├─────────────────────────────┤
-│ 🔍 搜索客户或事项...         │  ← 搜索栏（可选）
+│ 🔍 搜索客户...               │  ← 搜索栏（按客户名过滤）
 ├─────────────────────────────┤
 │                             │
 │ ┌─────────────────────────┐ │
-│ │ 阿里巴巴                │ │  ← 客户名称（customer_name）
-│ │ 续约谈判                │ │  ← 事项（follow_content 摘要）
-│ │ 2024-01-15              │ │  ← 最近跟进时间（仅年月日）
+│ │ 阿里巴巴    更新时间 12-25 14:30 │  ← 客户名 + 右侧「更新时间」
+│ │ 点击查看跟进             │ │  ← 固定副标题
 │ └─────────────────────────┘ │
 │                             │
 │ ┌─────────────────────────┐ │
-│ │ 腾讯科技                │ │
-│ │ 新产品方案演示          │ │
-│ │ 2024-01-14              │ │
+│ │ 腾讯科技    更新时间 12-20 10:00 │
+│ │ 点击查看跟进             │ │
 │ └─────────────────────────┘ │
 │                             │
 │         ...                 │
@@ -44,32 +44,16 @@
 | 元素 | 字段映射 | 样式说明 |
 |:---|:---|:---|
 | **主标题** | `customer_name` | 16px, 500字重, #1F2329（主文本色） |
-| **副标题** | `follow_content` 前20字 | 14px, 400字重, #646A73（次要文本） |
-| **时间** | `follow_time` 格式化日期 | 12px, #8F959E, 右对齐 |
+| **右侧更新时间** | `last_record_at`（最近一次增加跟进记录的时间） | 12px, #3370FF（主色蓝），无记录显示「暂无」；与 manager 列表项样式一致 |
+| **副标题** | 固定文案「点击查看跟进」 | 14px, 400字重, #646A73（次要文本）；列表不显示跟进事项 |
 
-### 2.3 时间显示规则（仅年月日）
+### 2.3 数据聚合逻辑（前端）
 
-| 时间范围 | 显示格式 |
-|:---|:---|
-| 当年 | "MM-DD"（如 01-15） |
-| 往年 | "YYYY-MM-DD"（如 2023-12-01） |
+列表数据由前端从「全量跟进记录」按 **客户** 维度聚合（与 manager 一致）：
 
-### 2.4 数据聚合逻辑
-
-列表按 **客户 + 事项** 维度聚合，显示该组合下**最近一次**跟进记录的时间：
-
-```sql
--- 聚合查询：按客户+事项分组，取最近跟进时间
-SELECT DISTINCT ON (customer_id, follow_content)
-    id,
-    customer_id,
-    customer_name,
-    follow_content,
-    follow_time
-FROM follow_records
-WHERE user_id = $1
-ORDER BY customer_id, follow_content, follow_time DESC;
-```
+- 对 `follow_records` 按 `customer_id` 去重，得到「客户列表」`groupsList`。
+- 每组保留 `customer_id`、`customer_name`、`last_record_at`（该客户最近一次记录的 `created_at`，无则回退 `follow_time`）；排序按 `last_record_at` **降序**。
+- 搜索仅按客户名过滤（占位符「搜索客户...」）。
 
 ---
 
@@ -85,7 +69,7 @@ ORDER BY customer_id, follow_content, follow_time DESC;
 │ ┌─────────────────────────┐ │
 │ │      客户信息卡片        │ │
 │ │  ┌─────┐ 阿里巴巴       │ │
-│ │  │头像 │  续约谈判       │ │  ← 事项名称（当前分组key）
+│ │  │头像 │  全部跟进       │ │  ← 固定文案（该客户下全部记录）
 │ │  └─────┘  共3次跟进     │ │
 │ └─────────────────────────┘ │
 │                             │
@@ -139,7 +123,8 @@ ORDER BY customer_id, follow_content, follow_time DESC;
 | **连接线** | - | 2px实线，#DEE0E3 |
 | **跟进时间** | `follow_time` | 14px, 500字重, #1F2329 |
 | **具体时间** | `follow_time` | 12px, #8F959E |
-| **跟进方式** | `follow_method` | 12px Tag标签（详情页内显示） |
+| **跟进方式** | `follow_method` | 12px Tag 标签（详情页内显示） |
+| **AI 生成** | `ai === true` | 当记录为对话方式收集时，在时间卡片右上角显示「AI 生成」标签（12px，灰色背景） |
 
 ### 3.3 时间轴卡片内容
 
@@ -165,48 +150,34 @@ ORDER BY customer_id, follow_content, follow_time DESC;
 
 ## 4. 数据查询示例
 
-### 4.1 列表页查询（聚合）
+### 4.1 列表页数据（index.html）
 
-```sql
--- 获取客户-事项维度的聚合列表
-WITH latest_records AS (
-    SELECT DISTINCT ON (customer_id, LEFT(follow_content, 50))
-        id,
-        customer_id,
-        customer_name,
-        LEFT(follow_content, 50) as matter_summary,
-        follow_time,
-        ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY follow_time DESC) as rn
-    FROM follow_records
-    WHERE user_id = $1
-    ORDER BY customer_id, LEFT(follow_content, 50), follow_time DESC
-)
-SELECT * FROM latest_records
-ORDER BY follow_time DESC
-LIMIT 20 OFFSET $2;
-```
+列表页直接使用 **GET /records** 拉取当前用户全部跟进记录；前端按 `customer_id` 聚合为 `groupsList`（每客户一行，按该客户最近跟进时间排序），不依赖后端聚合接口。
 
 ### 4.2 详情页查询（时间轴）
 
+当前实现：详情页按**客户**展示该客户下**全部**跟进记录（不限跟进事项），前端用 `customer_id` 过滤。
+
 ```sql
--- 获取指定客户-事项的所有跟进记录（时间轴）
+-- 获取指定客户的全部跟进记录（时间轴）
 SELECT 
     id,
+    customer_id,
     customer_name,
     contact_person,
     contact_role,
     contact_phone,
     follow_time,
     follow_method,
+    follow_content,
     follow_goal,
     follow_result,
     risk_content,
     next_plan,
+    ai,
     created_at
 FROM follow_records
-WHERE customer_id = $1 
-  AND user_id = $2
-  AND LEFT(follow_content, 50) = $3  -- 事项匹配
+WHERE customer_id = $1 AND user_id = $2
 ORDER BY follow_time DESC;
 ```
 
@@ -375,3 +346,136 @@ window.APP_CONFIG = {
 2. **清除缓存**：修改 OAuth 或用户标识逻辑后，用户需清除 localStorage 并重新登录，否则可能沿用旧的 JWT（含过期的 open_id）。
 3. **iframe 内打开**：若页面在飞书 iframe 中打开，飞书登录按钮需使用 `target="_top"` 以正确跳转。
 4. **H5 SDK**：页面引入飞书 H5 JS SDK，在飞书内嵌环境中可尝试 `h5sdk.biz.util.getAuthCode` 获取 code；若不可用，则依赖 OAuth 重定向方式。
+5. **飞书内 SDK 异步注入**：在飞书客户端内打开时，`window.h5sdk` 可能晚于页面脚本加载。前端在飞书环境下会先等待 `waitForH5Sdk`（约 3.5 秒轮询），再调用 `getAuthCode`，避免因 SDK 未就绪而一直显示「请使用飞书登录」。
+
+---
+
+# 页面修改记录
+
+## 跟进记录按客户名展示（2025-03）
+
+### 变更概述
+
+将跟进记录的展示从「按客户名 + 跟进事项」改为「仅按客户名」：列表每客户一行，点进详情后展示该客户下全部跟进记录（含所有跟进事项）；在添加/编辑页中跟进事项为必填且可更改；详情时间线中每条记录展示该条的跟进事项。
+
+### 1. 列表与详情逻辑
+
+| 项目 | 修改前 | 修改后 |
+|:---|:---|:---|
+| **列表聚合** | 按 `(customer_id, follow_content)` 去重，每「客户+事项」一行 | 按 `customer_id` 去重，每客户一行（取该客户最新跟进时间的一条作入口） |
+| **详情数据** | 只显示同客户、同跟进事项的记录 | 显示该客户下全部跟进记录（不限跟进事项） |
+| **详情页头部** | 显示当前分组的单一「跟进事项」 | 显示「全部跟进」 |
+
+涉及文件：
+
+- **index.html**：`filteredRecords` 去重 key 改为仅 `customer_id`；`detailRecords` 只按 `customer_id` 过滤；DetailPage 头部 `customer-matter` 改为「全部跟进」。
+- **manager.html**：二级列表由后端 `/manager/users/:id/groups` 仅返回客户名列表；请求详情时只传 `customer_name`；详情头部显示「全部跟进」。
+
+### 2. 详情时间线：显示跟进事项
+
+在**详细跟进记录页面**的每条时间线记录卡片中，增加「跟进事项」展示（`record.follow_content`），便于区分同一客户下不同事项的多次跟进。
+
+- **index.html**：DetailPage 时间线卡片在 timeline-header 下方增加「跟进事项」区块（`v-if="record.follow_content"`）。
+- **manager.html**：同上，每条 timeline-item 内增加跟进事项 section。
+
+### 3. 添加/编辑页：跟进事项必填且可更改
+
+| 场景 | 修改前 | 修改后 |
+|:---|:---|:---|
+| **添加记录** | 从详情页进入时客户名与跟进事项均为只读 | 仅客户名只读，跟进事项始终可编辑（仍必填） |
+| **编辑记录** | 跟进事项为只读（disabled） | 跟进事项可编辑，且为必填（提交前校验「请填写跟进事项」）；标签为「跟进事项 *」 |
+| **后端 PUT** | `updateRecordRequest` 不含 `follow_content`，无法更新 | 增加 `FollowContent` 字段，PUT 时写入并持久化 |
+
+涉及文件：
+
+- **index.html**：AddModal 中跟进事项输入框去掉 `isFromDetail` 的 disabled；EditModal 中跟进事项去掉 disabled、标签改为「跟进事项 *」、submit 中增加 `follow_content` 必填校验。
+- **page_api.go**：`updateRecordRequest` 增加 `FollowContent string`；PUT 分支中设置 `record.FollowContent = &fc` 后再调用 `UpdateFollowRecord`。
+
+### 4. 后端 API 变更（manager）
+
+| 接口 | 修改前 | 修改后 |
+|:---|:---|:---|
+| **GET /manager/users/:id/groups** | 返回 `(customer_name, follow_content)` 组合列表 | 仅按客户名去重，返回 `customer_name` 列表（无 follow_content） |
+| **GET /manager/users/:id/records** | 必填 `customer_name` 与 `follow_content` | 仅必填 `customer_name`；`follow_content` 可选，不传或为空时返回该客户下全部记录 |
+
+涉及文件：
+
+- **repository.go**：`ListCustomerFollowGroupsForManager` 查询改为 `SELECT DISTINCT customer_name ... ORDER BY customer_name`；`ListFollowRecordsForManager` 的 WHERE 增加对 `follow_content` 的可选条件（`COALESCE($3, '') = ''` 时不过滤事项）。
+- **manager_api.go**：groups 返回的 map 仅含 `customer_name`；records 仅在校验 `customer_name` 为空时返回 400。
+
+---
+
+## 后续更新（2025-03）
+
+### 1. follow_records 表增加 ai 字段
+
+| 项目 | 说明 |
+|:---|:---|
+| **数据库** | `follow_records` 表新增列 `ai BOOLEAN NOT NULL DEFAULT false`。已有库需执行：`ALTER TABLE sale.follow_records ADD COLUMN IF NOT EXISTS ai BOOLEAN NOT NULL DEFAULT false;` |
+| **含义** | 标识该条跟进是否通过**对话方式**（销售助手）收集：对话写入为 `true`，页面手动录入为 `false`。 |
+| **后端** | 模型 `FollowRecord` 增加字段 `AI`；`CreateFollowRecord`/`UpdateFollowRecord` 及所有相关 SELECT 包含 `ai`；对话流程（output_worker、turn_orchestrator）写入时设 `AI: true`，`CreateFollowRecordForPage` 设 `AI: false`。 |
+| **前端** | 详情页时间线卡片右上角：当 `record.ai === true` 时显示「AI 生成」标签（index.html、manager.html 均已支持）。列表/详情 API 返回中包含 `ai` 字段。 |
+
+### 2. 编辑跟进记录：允许编辑客户名与跟进事项
+
+| 项目 | 说明 |
+|:---|:---|
+| **前端** | 编辑弹窗（EditModal）中「客户名」「跟进事项」由只读改为可编辑；保存前校验必填；标签为「客户名 *」「跟进事项 *」。 |
+| **后端** | `updateRecordRequest` 增加 `CustomerName string`；PUT 处理时设置 `record.CustomerName = req.CustomerName`，与 `FollowContent` 一并持久化。 |
+
+### 3. 列表实现与数据流（index.html）
+
+| 项目 | 说明 |
+|:---|:---|
+| **列表数据** | 使用计算属性 `groupsList`：从 `records` 按 `customer_id` 分组，每组 `{ customer_id, customer_name }`，按该客户最近跟进时间排序；搜索按客户名过滤。 |
+| **列表展示** | 每行仅显示客户名 + 副标题「点击查看跟进」，不显示跟进事项与日期。 |
+| **详情数据** | `detailRecords` 仅按 `selectedCustomer.customer_id` 过滤，展示该客户下全部跟进记录；详情头部分组文案为「全部跟进」。 |
+| **注意** | setup 的 return 中暴露 `groupsList`（不再使用已移除的 `filteredRecords`），否则会导致列表异常。 |
+
+### 4. 飞书内打开时的登录逻辑
+
+| 项目 | 说明 |
+|:---|:---|
+| **问题** | 在飞书客户端内打开时，H5 SDK（`window.h5sdk`）可能异步注入，一进页就调 `getAuthCode` 易拿不到 code，从而一直显示「请使用飞书登录」。 |
+| **实现** | 新增 `waitForH5Sdk(timeoutMs)`：在飞书环境下若暂无 `window.h5sdk`，则轮询等待（约 3.5 秒）。`getAuthCode` 在飞书环境下先 `await waitForH5Sdk(3500)`，再在存在 `h5sdk` 时调用 `initH5Bridge()` 与 `h5sdk.biz.util.getAuthCode`。 |
+| **配置** | 若仍失败，需确认 `config.js`/APP_CONFIG 中已配置 `feishuAppId`（及可选 `feishuRedirectUri`），且飞书应用后台已配置可信域名与重定向 URL。 |
+
+---
+
+## 列表按最近一次跟进记录时间排序与「更新时间」展示（2025-03）
+
+### 变更概述
+
+在 **manager.html** 与 **index.html** 的列表页中，列表按「用户/客户最近一次增加客户跟进记录的时间」倒序排列，并在每项右侧展示该时间为「日志更新时间」或「更新时间」，无记录时显示「暂无」；样式统一为 12px、主色蓝（#3370FF）。
+
+### 1. manager.html
+
+| 层级 | 修改内容 |
+|:---|:---|
+| **一级：用户列表** | 用户列表按「该用户最近一次增加客户跟进记录的时间」倒序（`last_record_at DESC NULLS LAST`）；每项右侧增加「日志更新时间」，显示该时间，无记录显示「暂无」。 |
+| **二级：客户列表** | 客户列表按「该客户最近一次增加客户跟进记录的时间」倒序；每项右侧增加「更新时间」，显示该时间，无记录显示「暂无」。 |
+| **样式** | 右侧时间使用 `.list-item-meta`：`font-size: 12px`，`color: var(--primary-color)`（蓝色），与列表项标题同一行、右对齐。 |
+
+**后端**：
+
+- **Repository**：`ManagerUser` 增加 `LastRecordAt *time.Time`；`ListUsersForManager` 的 SQL 增加子查询 `(SELECT MAX(fr.created_at) FROM follow_records fr WHERE fr.user_id = u.id) AS last_record_at`，`ORDER BY last_record_at DESC NULLS LAST, u.name, u.id`。`CustomerFollowGroup` 增加 `LastRecordAt *time.Time`；`ListCustomerFollowGroupsForManager` 改为按 `customer_name` 分组并取 `MAX(created_at) AS last_record_at`，`ORDER BY last_record_at DESC NULLS LAST, customer_name`。
+- **manager_api.go**：用户列表返回中增加 `last_record_at`（ISO 或 null）；客户列表（groups）返回中增加 `last_record_at`（ISO 或 null）。
+
+**前端**：一级列表项右侧展示「日志更新时间」+ 格式化时间（`formatDateTime`），二级列表项右侧展示「更新时间」+ 格式化时间；无值时显示「暂无」。复用 `formatDate`、`formatTime`，新增 `formatDateTime`。
+
+### 2. index.html（一级：客户列表）
+
+| 项目 | 说明 |
+|:---|:---|
+| **排序** | 客户列表（`groupsList`）按「该客户最近一次**增加**客户跟进记录的时间」倒序；取每条记录的 `created_at`（无则回退 `follow_time`）按客户聚合后的最大值作为 `last_record_at`。 |
+| **展示** | 每项右侧增加「更新时间」，显示 `last_record_at` 的格式化值，无记录显示「暂无」。 |
+| **样式** | 与 manager 一致：`.list-item-meta`，12px，`color: var(--primary-color)`。 |
+
+**前端**：`groupsList` 计算属性中保留每客户的 `last_record_at`，按该字段倒序；ListPage 模板中在 `list-item-header` 右侧增加「更新时间」+ `formatDateTime(group.last_record_at)` 或「暂无」；ListPage 的 methods 中增加 `formatTime`、`formatDateTime`；样式表中增加 `.list-item-meta` 定义。
+
+### 3. 时间含义与数据来源
+
+| 项目 | 说明 |
+|:---|:---|
+| **「最近一次增加客户跟进记录的时间」** | 以 `follow_records.created_at` 为准（记录写入时间）；manager 后端用 `MAX(created_at)`，index 前端从 GET /records 返回的每条记录的 `created_at` 聚合。 |
+| **无记录用户/客户** | 后端排序使用 `NULLS LAST`，无记录项排在列表最后；前端对 null/空显示「暂无」。 |

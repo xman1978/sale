@@ -138,21 +138,20 @@ func (c *OpenAIClient) IsUserNoMoreCustomers(ctx context.Context, userInput stri
 func (c *OpenAIClient) SemanticAnalysis(ctx context.Context, userInput, stage, focusCustomer, expectedField, conversationHistory string) (*models.SemanticAnalysisResult, error) {
 	systemPrompt := c.prompts.SemanticAnalysis
 
-	conversationPrefix := ""
-	if conversationHistory != "" {
-		conversationPrefix = fmt.Sprintf("此前对话内容：\n%s\n\n", conversationHistory)
-	}
-
-	// 构建用户提示，CONFIRMING 阶段显式强调将修正归入当前关注客户
-	extraHint := ""
-	if stage == models.StatusConfirming && focusCustomer != "" {
-		extraHint = fmt.Sprintf("（重要：用户若对复述内容提出修正，必须将修正字段归入【%s】的 field_updates，即使用户未重复客户名）\n", focusCustomer)
-	}
-
-	userPrompt := fmt.Sprintf(`当前会话阶段：%s
+	var userPrompt string
+	if stage == models.StatusConfirming {
+		userPrompt = fmt.Sprintf(`当前会话阶段：%s
 当前关注的客户：%s
-当前客户所需信息点：%s
-%s%s用户输入：%s`, stage, focusCustomer, expectedField, extraHint, conversationPrefix, userInput)
+对话上下文：
+%s
+User: %s`, stage, focusCustomer, conversationHistory, userInput)
+	} else {
+		userPrompt = fmt.Sprintf(`当前会话阶段：%s
+当前关注的客户：%s
+希望收集的信息点：%s
+对话上下文：%s
+User: %s`, stage, focusCustomer, expectedField, conversationHistory, userInput)
+	}
 
 	c.logger.Debug("Semantic analysis user prompt", "userPrompt", userPrompt)
 
@@ -190,6 +189,8 @@ func (c *OpenAIClient) SemanticAnalysis(ctx context.Context, userInput, stage, f
 		}
 	}
 
+	c.logger.Debug("Semantic analysis result", "result", result)
+
 	return &result, nil
 }
 
@@ -202,29 +203,17 @@ func (c *OpenAIClient) GenerateDialogue(ctx context.Context, stage, focusCustome
 	case models.StatusCollecting:
 		systemPrompt = c.prompts.DialogueCollecting
 
-		conversationPrefix := ""
-		if conversationHistory != "" {
-			conversationPrefix = fmt.Sprintf("此前对话内容：\n%s\n\n", conversationHistory)
-		}
 		userPrompt = fmt.Sprintf(`请生成下一句你要对用户说的话。
-当前对话背景：
-- 这是一次工作跟进的复盘对话
-- 允许信息不完整、顺序混乱
-- 重点是复盘发生了什么，而不是填写信息
-
-当前聚焦客户：
-%s
-
-希望收集的信息：
-%s
-
+当前聚焦客户：%s
+希望收集的信息点：%s
 已知跟进情况摘要：
 %s
 
-%s用户刚刚说：
+对话上下文：
 %s
+User: %s
 
-请你自然地继续这段对话。`, focusCustomer, expectedField, summary, conversationPrefix, userInput)
+请你自然地继续这段对话。`, focusCustomer, expectedField, summary, conversationHistory, userInput)
 
 	case models.StatusAskingOtherCustomers:
 		// 固定文案，无需调用模型（generateReply 会直接返回，此处为兜底）
@@ -233,11 +222,7 @@ func (c *OpenAIClient) GenerateDialogue(ctx context.Context, stage, focusCustome
 	case models.StatusConfirming:
 		systemPrompt = c.prompts.DialogueConfirming
 
-		userPrompt = fmt.Sprintf(`根据以下跟进记录和用户说的，生成下一句你要对用户说的话。
-注意：跟进记录（JSON）即为待确认的全部数据，请仅基于此复述，不得虚构、杜撰或补充任何未出现的信息。
-
-跟进记录（JSON）：%s
-用户刚才说：%s`, historyContext, userInput)
+		userPrompt = fmt.Sprintf(`跟进记录（JSON）：%s`, historyContext)
 
 	default:
 		return "", fmt.Errorf("unsupported stage: %s", stage)

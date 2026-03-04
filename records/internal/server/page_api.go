@@ -37,6 +37,8 @@ type createRecordRequest struct {
 
 // updateRecordRequest PUT /api/records/:id 请求体
 type updateRecordRequest struct {
+	CustomerName  string  `json:"customer_name"`
+	FollowContent string  `json:"follow_content"`
 	FollowMethod  string  `json:"follow_method"`
 	ContactPerson string  `json:"contact_person"`
 	ContactRole   *string `json:"contact_role"`
@@ -221,6 +223,9 @@ func (s *Server) pageRecordsByIDHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		record.CustomerName = req.CustomerName
+		fc := req.FollowContent
+		record.FollowContent = &fc
 		record.FollowMethod = &req.FollowMethod
 		record.ContactPerson = &req.ContactPerson
 		record.ContactRole = req.ContactRole
@@ -273,6 +278,7 @@ func followRecordToPageMap(r *models.FollowRecord, customerIDStr string) map[str
 		"customer_name": r.CustomerName,
 		"follow_time":   r.FollowTime.Format(time.RFC3339),
 		"created_at":    r.CreatedAt.Format(time.RFC3339),
+		"ai":            r.AI,
 	}
 	if r.FollowContent != nil {
 		m["follow_content"] = *r.FollowContent

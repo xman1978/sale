@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS follow_records (
     follow_result VARCHAR(2000),
     risk_content VARCHAR(2000),
     next_plan VARCHAR(2000),
+    ai BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -81,7 +82,7 @@ CREATE TABLE IF NOT EXISTS follow_records (
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_dialogs_session_id ON dialogs(session_id);
 CREATE INDEX IF NOT EXISTS idx_dialogs_turn_index ON dialogs(session_id, turn_index);
-CREATE INDEX IF NOT EXISTS idx_follow_records_user_id ON follow_records(user_id);
+CREATE INDEX IF NOT EXISTS idx_follow_records_user_id ON follow_records(user_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_follow_records_customer_id ON follow_records(customer_id);
 
 -- 管理员可查看的日志范围：manager_id 为可查看列表的用户，每管理员一行
