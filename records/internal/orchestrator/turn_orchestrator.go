@@ -21,16 +21,18 @@ import (
 
 // TurnOrchestrator 对话轮次编排器
 type TurnOrchestrator struct {
-	db                   *sqlx.DB
-	aiClient             ai.Client
-	ruleEngine           *engine.RuleEngine
-	repo                 *repository.Repository
-	outputWorker         *worker.OutputWorker
-	logger               logger.Logger
-	askingOtherCustomers string
-	outputtingConfirm    string
-	outputtingEnded      string // OUTPUTTING 阶段用户发非跟进信息时的友好提示
-	systemError          string
+	db                    *sqlx.DB
+	aiClient              ai.Client
+	ruleEngine            *engine.RuleEngine
+	repo                  *repository.Repository
+	outputWorker          *worker.OutputWorker
+	logger                logger.Logger
+	askingOtherCustomers  string
+	outputtingConfirm     string
+	outputtingEnded       string // OUTPUTTING 阶段用户发非跟进信息时的友好提示
+	collectingAbortConfirm string // 用户表达中断意图时发出的确认文案
+	collectingAborted     string // 用户确认中断后发出的结束语
+	systemError           string
 }
 
 // NewTurnOrchestrator 创建对话轮次编排器
@@ -44,20 +46,24 @@ func NewTurnOrchestrator(
 	askingOtherCustomers string,
 	outputtingConfirm string,
 	outputtingEnded string,
+	collectingAbortConfirm string,
+	collectingAborted string,
 	systemError string,
 ) *TurnOrchestrator {
 
 	return &TurnOrchestrator{
-		db:                   db,
-		aiClient:             aiClient,
-		ruleEngine:           ruleEngine,
-		repo:                 repo,
-		outputWorker:         outputWorker,
-		logger:               logger,
-		askingOtherCustomers: askingOtherCustomers,
-		outputtingConfirm:    outputtingConfirm,
-		outputtingEnded:      outputtingEnded,
-		systemError:          systemError,
+		db:                    db,
+		aiClient:              aiClient,
+		ruleEngine:            ruleEngine,
+		repo:                  repo,
+		outputWorker:          outputWorker,
+		logger:                 logger,
+		askingOtherCustomers:  askingOtherCustomers,
+		outputtingConfirm:     outputtingConfirm,
+		outputtingEnded:       outputtingEnded,
+		collectingAbortConfirm: collectingAbortConfirm,
+		collectingAborted:     collectingAborted,
+		systemError:           systemError,
 	}
 }
 
@@ -106,6 +112,47 @@ func (o *TurnOrchestrator) ProcessTurn(ctx context.Context, userID, userInput st
 		runtime, err := o.loadLatestRuntime(txCtx, session.ID)
 		if err != nil {
 			return fmt.Errorf("failed to load runtime: %w", err)
+		}
+
+		// 2.5 用户中断：待确认分支（上一轮已发“确定要结束本次记录吗？”）
+		if runtime.PendingAbortConfirm {
+			confirmed, err := o.aiClient.IsUserAbortConfirmation(ctx, userInput)
+			if err != nil {
+				o.logger.Error("IsUserAbortConfirmation failed", "error", err)
+			} else if confirmed {
+				if err := o.repo.DeleteDialogsBySession(txCtx, session.ID); err != nil {
+					return fmt.Errorf("delete dialogs on abort: %w", err)
+				}
+				if err := o.repo.DeleteSession(txCtx, session.ID); err != nil {
+					return fmt.Errorf("delete session on abort: %w", err)
+				}
+				reply = o.collectingAborted
+				if reply == "" {
+					reply = "好的，本次记录已结束。之后有新的客户跟进要整理，再找我即可。"
+				}
+				return nil
+			}
+			runtime.PendingAbortConfirm = false
+		}
+
+		// 2.6 用户中断：首次表达“想结束”（COLLECTING/CONFIRMING/ASKING_OTHER_CUSTOMERS）
+		if !runtime.PendingAbortConfirm && (session.Status == models.StatusCollecting || session.Status == models.StatusConfirming || session.Status == models.StatusAskingOtherCustomers) {
+			abort, err := o.aiClient.IsUserAbortCollecting(ctx, userInput)
+			if err != nil {
+				o.logger.Error("IsUserAbortCollecting failed", "error", err)
+			} else if abort {
+				runtime.PendingAbortConfirm = true
+				reply = o.collectingAbortConfirm
+				if reply == "" {
+					reply = "确定要结束本次记录吗？未保存的内容将不会保留。回复「确定」结束，或继续补充信息。"
+				}
+				runtime.TurnIndex++
+				if err := o.saveRuntimeSnapshot(txCtx, session.ID, runtime, userInput, reply); err != nil {
+					o.logger.Error("Failed to save runtime snapshot on abort confirm", "error", err)
+					return fmt.Errorf("failed to save runtime snapshot: %w", err)
+				}
+				return nil
+			}
 		}
 
 		// 3. 增加轮次索引
@@ -247,13 +294,14 @@ func (o *TurnOrchestrator) loadLatestRuntime(ctx context.Context, sessionID uuid
 	// 注：若为 nil，由 processWithRuleEngine 入口的 ensureFocusWhenPending 统一恢复
 
 	return &RuntimeContext{
-		SessionID:        sessionID,
-		TurnIndex:        dialog.TurnIndex,
-		State:            snapshot.State,
-		Status:           snapshot.Status,
-		FocusCustomerID:  focusCustomerID,
-		PendingUpdates:   pendingUpdates,
-		PendingReconfirm: snapshot.PendingReconfirm,
+		SessionID:           sessionID,
+		TurnIndex:           dialog.TurnIndex,
+		State:               snapshot.State,
+		Status:              snapshot.Status,
+		FocusCustomerID:     focusCustomerID,
+		PendingUpdates:      pendingUpdates,
+		PendingReconfirm:    snapshot.PendingReconfirm,
+		PendingAbortConfirm: snapshot.PendingAbortConfirm,
 	}, nil
 }
 
@@ -846,12 +894,13 @@ func (o *TurnOrchestrator) generateReply(ctx context.Context, runtime *RuntimeCo
 // saveRuntimeSnapshot 保存运行态快照（含用户输入与助手回复，供后续大模型理解对话上下文）
 func (o *TurnOrchestrator) saveRuntimeSnapshot(ctx context.Context, sessionID uuid.UUID, runtime *RuntimeContext, userInput, assistantReply string) error {
 	snapshot := models.RuntimeState{
-		SessionID:        sessionID,
-		FocusCustomerID:  runtime.FocusCustomerID,
-		State:            runtime.State,
-		Status:           runtime.Status,
-		PendingUpdates:   runtime.PendingUpdates,
-		PendingReconfirm: runtime.PendingReconfirm,
+		SessionID:           sessionID,
+		FocusCustomerID:     runtime.FocusCustomerID,
+		State:               runtime.State,
+		Status:              runtime.Status,
+		PendingUpdates:      runtime.PendingUpdates,
+		PendingReconfirm:    runtime.PendingReconfirm,
+		PendingAbortConfirm: runtime.PendingAbortConfirm,
 	}
 
 	snapshotBytes, err := json.Marshal(snapshot)
@@ -1321,14 +1370,15 @@ func (o *TurnOrchestrator) isFirstFocusForCustomer(ctx context.Context, sessionI
 
 // RuntimeContext 运行时上下文
 type RuntimeContext struct {
-	SessionID           uuid.UUID                         `json:"session_id"`
-	TurnIndex           int                               `json:"turn_index"`
-	State               string                            `json:"state"`
-	Status              string                            `json:"status"`
-	FocusCustomerID     *uuid.UUID                        `json:"focus_customer_id,omitempty"`
+	SessionID            uuid.UUID                         `json:"session_id"`
+	TurnIndex            int                               `json:"turn_index"`
+	State                string                            `json:"state"`
+	Status               string                            `json:"status"`
+	FocusCustomerID      *uuid.UUID                        `json:"focus_customer_id,omitempty"`
 	MentionedCustomerID *uuid.UUID                        `json:"mentioned_customer_id,omitempty"`
-	SemanticRelevance   string                            `json:"semantic_relevance"`
-	PendingUpdates      map[string]map[string]interface{} `json:"pending_updates"` // customer_id -> field -> value，用于状态推导和 OUTPUTTING 写入 follow_records
-	IsFirstFocus        bool                              `json:"is_first_focus"`
-	PendingReconfirm    bool                              `json:"pending_reconfirm"` // CONFIRMING 修改后回到 COLLECTING，待全部 COMPLETE 后应直接回到 CONFIRMING
+	SemanticRelevance    string                            `json:"semantic_relevance"`
+	PendingUpdates       map[string]map[string]interface{} `json:"pending_updates"` // customer_id -> field -> value，用于状态推导和 OUTPUTTING 写入 follow_records
+	IsFirstFocus         bool                              `json:"is_first_focus"`
+	PendingReconfirm     bool                              `json:"pending_reconfirm"`     // CONFIRMING 修改后回到 COLLECTING，待全部 COMPLETE 后应直接回到 CONFIRMING
+	PendingAbortConfirm  bool                              `json:"pending_abort_confirm"` // 已发“确定要结束本次记录吗？”，等待用户确认；确认则删除会话，否则清除此标记继续收集
 }

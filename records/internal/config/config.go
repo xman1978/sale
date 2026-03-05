@@ -117,6 +117,8 @@ type Prompts struct {
 	IsCustomerFollowRelated string `yaml:"is_customer_follow_related"`
 	IsUserConfirmation      string `yaml:"is_user_confirmation"`
 	IsUserNoMoreCustomers   string `yaml:"is_user_no_more_customers"`
+	IsUserAbortCollecting   string `yaml:"is_user_abort_collecting"`
+	IsUserAbortConfirmation string `yaml:"is_user_abort_confirmation"`
 	SemanticAnalysis        string `yaml:"semantic_analysis"`
 	DialogueCollecting      string `yaml:"dialogue_collecting"`
 	DialogueConfirming      string `yaml:"dialogue_confirming"`
@@ -125,15 +127,17 @@ type Prompts struct {
 }
 
 type Messages struct {
-	NewUser              string `yaml:"new_user"`
-	WelcomeBack          string `yaml:"welcome_back"`
-	ContinueSession      string `yaml:"continue_session"`
-	NewDialog            string `yaml:"new_dialog"`
-	AskingOtherCustomers string `yaml:"asking_other_customers"`
-	OutputtingConfirm    string `yaml:"outputting_confirm"`
-	OutputtingEnded      string `yaml:"outputting_ended"` // OUTPUTTING 阶段用户继续发消息且非跟进信息时的友好提示
-	SystemError          string `yaml:"system_error"`
-	ProcessError         string `yaml:"process_error"`
+	NewUser               string `yaml:"new_user"`
+	WelcomeBack           string `yaml:"welcome_back"`
+	ContinueSession       string `yaml:"continue_session"`
+	NewDialog             string `yaml:"new_dialog"`
+	AskingOtherCustomers  string `yaml:"asking_other_customers"`
+	OutputtingConfirm     string `yaml:"outputting_confirm"`
+	OutputtingEnded       string `yaml:"outputting_ended"`       // OUTPUTTING 阶段用户继续发消息且非跟进信息时的友好提示
+	CollectingAbortConfirm string `yaml:"collecting_abort_confirm"` // 用户表达中断意图时发出的确认文案
+	CollectingAborted     string `yaml:"collecting_aborted"`        // 用户确认中断后发出的结束语
+	SystemError           string `yaml:"system_error"`
+	ProcessError          string `yaml:"process_error"`
 }
 
 // Load 加载配置文件

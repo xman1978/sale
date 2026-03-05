@@ -75,7 +75,8 @@ func New(
 
 	// 初始化编排器
 	orch := orchestrator.NewTurnOrchestrator(db, aiClient, ruleEngine, repo, outputWorker, logger,
-		cfg.Messages.AskingOtherCustomers, cfg.Messages.OutputtingConfirm, cfg.Messages.OutputtingEnded, cfg.Messages.SystemError)
+		cfg.Messages.AskingOtherCustomers, cfg.Messages.OutputtingConfirm, cfg.Messages.OutputtingEnded,
+		cfg.Messages.CollectingAbortConfirm, cfg.Messages.CollectingAborted, cfg.Messages.SystemError)
 
 	return &Server{
 		config:       cfg,

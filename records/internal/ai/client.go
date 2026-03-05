@@ -36,6 +36,8 @@ type Client interface {
 	IsCustomerFollowRelated(ctx context.Context, userInput string) (bool, error)
 	IsUserConfirmation(ctx context.Context, userInput string) (bool, error)
 	IsUserNoMoreCustomers(ctx context.Context, userInput string) (bool, error)
+	IsUserAbortCollecting(ctx context.Context, userInput string) (bool, error)
+	IsUserAbortConfirmation(ctx context.Context, userInput string) (bool, error)
 	SemanticAnalysis(ctx context.Context, userInput, stage, focusCustomer, expectedField, conversationHistory string) (*models.SemanticAnalysisResult, error)
 	GenerateDialogue(ctx context.Context, stage, focusCustomer, expectedField, userInput, historyContext, summary, conversationHistory string) (string, error)
 	SummarizeCustomerInfo(ctx context.Context, customerFollowRecords string) (string, error)
@@ -134,6 +136,52 @@ func (c *OpenAIClient) IsUserNoMoreCustomers(ctx context.Context, userInput stri
 	return extractFinalContent(response.Choices[0].Message.Content) == "true", nil
 }
 
+// IsUserAbortCollecting 判断用户是否表达“结束/取消本次记录”的意图（COLLECTING/CONFIRMING/ASKING_OTHER_CUSTOMERS 阶段）
+func (c *OpenAIClient) IsUserAbortCollecting(ctx context.Context, userInput string) (bool, error) {
+	if c.prompts.IsUserAbortCollecting == "" {
+		return false, nil
+	}
+	systemPrompt := c.prompts.IsUserAbortCollecting
+	userPrompt := fmt.Sprintf(`用户输入：%s`, userInput)
+	response, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model: openai.ChatModel(c.config.Semantic.ModelName),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(systemPrompt),
+			openai.UserMessage(userPrompt),
+		},
+		Temperature:         openai.Float(c.config.Semantic.Temperature),
+		MaxCompletionTokens: openai.Int(c.config.Semantic.MaxCompletionTokens),
+	})
+	if err != nil {
+		c.logger.Error("IsUserAbortCollecting failed", "error", err)
+		return false, fmt.Errorf("is user abort collecting failed: %w", err)
+	}
+	return extractFinalContent(response.Choices[0].Message.Content) == "true", nil
+}
+
+// IsUserAbortConfirmation 判断用户是否确认结束本次记录（在刚问过“确定要结束本次记录吗？”的前提下）
+func (c *OpenAIClient) IsUserAbortConfirmation(ctx context.Context, userInput string) (bool, error) {
+	if c.prompts.IsUserAbortConfirmation == "" {
+		return false, nil
+	}
+	systemPrompt := c.prompts.IsUserAbortConfirmation
+	userPrompt := fmt.Sprintf(`用户输入：%s`, userInput)
+	response, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model: openai.ChatModel(c.config.Semantic.ModelName),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(systemPrompt),
+			openai.UserMessage(userPrompt),
+		},
+		Temperature:         openai.Float(c.config.Semantic.Temperature),
+		MaxCompletionTokens: openai.Int(c.config.Semantic.MaxCompletionTokens),
+	})
+	if err != nil {
+		c.logger.Error("IsUserAbortConfirmation failed", "error", err)
+		return false, fmt.Errorf("is user abort confirmation failed: %w", err)
+	}
+	return extractFinalContent(response.Choices[0].Message.Content) == "true", nil
+}
+
 // SemanticAnalysis 语义分析
 func (c *OpenAIClient) SemanticAnalysis(ctx context.Context, userInput, stage, focusCustomer, expectedField, conversationHistory string) (*models.SemanticAnalysisResult, error) {
 	systemPrompt := c.prompts.SemanticAnalysis
@@ -213,7 +261,9 @@ func (c *OpenAIClient) GenerateDialogue(ctx context.Context, stage, focusCustome
 %s
 User: %s
 
-请你自然地继续这段对话。`, focusCustomer, expectedField, summary, conversationHistory, userInput)
+用户刚才说的话：%s
+
+请你自然地继续这段对话。`, focusCustomer, expectedField, summary, conversationHistory, userInput, userInput)
 
 	case models.StatusAskingOtherCustomers:
 		// 固定文案，无需调用模型（generateReply 会直接返回，此处为兜底）

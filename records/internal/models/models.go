@@ -91,6 +91,8 @@ type RuntimeState struct {
 	PendingUpdates map[string]map[string]interface{} `json:"pending_updates,omitempty"`
 	// PendingReconfirm: CONFIRMING 阶段用户提出修改后，回到 COLLECTING 修改信息，待全部客户 COMPLETE 后应直接回到 CONFIRMING 而非 ASKING_OTHER_CUSTOMERS
 	PendingReconfirm bool `json:"pending_reconfirm,omitempty"`
+	// PendingAbortConfirm: 已向用户发送“确定要结束本次记录吗？”等待用户确认；下一轮若用户确认则结束会话并删除 dialogs+session，否则清除此标记并继续收集
+	PendingAbortConfirm bool `json:"pending_abort_confirm,omitempty"`
 }
 
 // SemanticAnalysisResult 语义分析结果（支持多客户）
