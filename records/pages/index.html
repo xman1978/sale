@@ -320,7 +320,7 @@
     }
     .timeline-ai-tag {
       font-size: 12px;
-      color: #8F959E;
+      color: #b609ef;
       background: rgba(143, 149, 158, 0.12);
       padding: 2px 8px;
       border-radius: 4px;
@@ -643,7 +643,10 @@
                     <span v-if="record.ai" class="timeline-ai-tag">AI 生成</span>
                   </div>
                 </div>
-                
+                <div v-if="record.follow_content" class="timeline-section">
+                  <div class="timeline-label">跟进事项</div>
+                  <div class="timeline-value">{{ record.follow_content }}</div>
+                </div>
                 <div v-if="record.contact_person" class="timeline-section">
                   <div class="timeline-label">联系人</div>
                   <div class="timeline-contact">
