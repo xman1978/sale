@@ -21,18 +21,18 @@ import (
 
 // TurnOrchestrator 对话轮次编排器
 type TurnOrchestrator struct {
-	db                    *sqlx.DB
-	aiClient              ai.Client
-	ruleEngine            *engine.RuleEngine
-	repo                  *repository.Repository
-	outputWorker          *worker.OutputWorker
-	logger                logger.Logger
-	askingOtherCustomers  string
-	outputtingConfirm     string
-	outputtingEnded       string // OUTPUTTING 阶段用户发非跟进信息时的友好提示
+	db                     *sqlx.DB
+	aiClient               ai.Client
+	ruleEngine             *engine.RuleEngine
+	repo                   *repository.Repository
+	outputWorker           *worker.OutputWorker
+	logger                 logger.Logger
+	askingOtherCustomers   string
+	outputtingConfirm      string
+	outputtingEnded        string // OUTPUTTING 阶段用户发非跟进信息时的友好提示
 	collectingAbortConfirm string // 用户表达中断意图时发出的确认文案
-	collectingAborted     string // 用户确认中断后发出的结束语
-	systemError           string
+	collectingAborted      string // 用户确认中断后发出的结束语
+	systemError            string
 }
 
 // NewTurnOrchestrator 创建对话轮次编排器
@@ -52,18 +52,18 @@ func NewTurnOrchestrator(
 ) *TurnOrchestrator {
 
 	return &TurnOrchestrator{
-		db:                    db,
-		aiClient:              aiClient,
-		ruleEngine:            ruleEngine,
-		repo:                  repo,
-		outputWorker:          outputWorker,
+		db:                     db,
+		aiClient:               aiClient,
+		ruleEngine:             ruleEngine,
+		repo:                   repo,
+		outputWorker:           outputWorker,
 		logger:                 logger,
-		askingOtherCustomers:  askingOtherCustomers,
-		outputtingConfirm:     outputtingConfirm,
-		outputtingEnded:       outputtingEnded,
+		askingOtherCustomers:   askingOtherCustomers,
+		outputtingConfirm:      outputtingConfirm,
+		outputtingEnded:        outputtingEnded,
 		collectingAbortConfirm: collectingAbortConfirm,
-		collectingAborted:     collectingAborted,
-		systemError:           systemError,
+		collectingAborted:      collectingAborted,
+		systemError:            systemError,
 	}
 }
 
@@ -171,8 +171,8 @@ func (o *TurnOrchestrator) ProcessTurn(ctx context.Context, userID, userInput st
 
 			// 获取此前对话历史，帮助大模型理解上下文
 			convHistory, _ := o.repo.GetSessionConversationHistory(txCtx, session.ID, runtime.TurnIndex)
-			expectedField := o.getExpectedField(runtime.State)
-			semanticResult, err = o.aiClient.SemanticAnalysis(ctx, userInput, runtime.Status, focusCustomerName, expectedField, convHistory)
+			expectedFieldDescription := o.getExpectedFieldDescription(runtime.State)
+			semanticResult, err = o.aiClient.SemanticAnalysis(ctx, userInput, runtime.Status, focusCustomerName, expectedFieldDescription, convHistory)
 			if err != nil {
 				o.logger.Error("Semantic analysis failed", "error", err)
 				// 语义分析失败不影响对话继续
@@ -884,9 +884,9 @@ func (o *TurnOrchestrator) generateReply(ctx context.Context, runtime *RuntimeCo
 		}
 	}
 
-	expectedField := o.getExpectedInfo(runtime.State)
+	expectedFieldDescription := o.getExpectedFieldDescription(runtime.State)
 
-	reply, err := o.aiClient.GenerateDialogue(ctx, runtime.Status, focusCustomerName, expectedField, userInput, historyContext, summary, conversationHistory)
+	reply, err := o.aiClient.GenerateDialogue(ctx, runtime.Status, focusCustomerName, expectedFieldDescription, userInput, historyContext, summary, conversationHistory)
 
 	return reply, err
 }
@@ -940,9 +940,9 @@ func (o *TurnOrchestrator) getExpectedField(state string) string {
 	return models.GetFieldByState(state)
 }
 
-// getExpectedInfo 获取期望收集的信息
-func (o *TurnOrchestrator) getExpectedInfo(state string) string {
-	return models.GetExpectedInfo(state)
+// getExpectedFieldDescription 获取期望收集的字段对应的描述
+func (o *TurnOrchestrator) getExpectedFieldDescription(state string) string {
+	return models.GetExpectedFieldDescription(state)
 }
 
 func (o *TurnOrchestrator) findOrCreateCustomer(ctx context.Context, name string) (uuid.UUID, error) {
@@ -1370,15 +1370,15 @@ func (o *TurnOrchestrator) isFirstFocusForCustomer(ctx context.Context, sessionI
 
 // RuntimeContext 运行时上下文
 type RuntimeContext struct {
-	SessionID            uuid.UUID                         `json:"session_id"`
-	TurnIndex            int                               `json:"turn_index"`
-	State                string                            `json:"state"`
-	Status               string                            `json:"status"`
-	FocusCustomerID      *uuid.UUID                        `json:"focus_customer_id,omitempty"`
+	SessionID           uuid.UUID                         `json:"session_id"`
+	TurnIndex           int                               `json:"turn_index"`
+	State               string                            `json:"state"`
+	Status              string                            `json:"status"`
+	FocusCustomerID     *uuid.UUID                        `json:"focus_customer_id,omitempty"`
 	MentionedCustomerID *uuid.UUID                        `json:"mentioned_customer_id,omitempty"`
-	SemanticRelevance    string                            `json:"semantic_relevance"`
-	PendingUpdates       map[string]map[string]interface{} `json:"pending_updates"` // customer_id -> field -> value，用于状态推导和 OUTPUTTING 写入 follow_records
-	IsFirstFocus         bool                              `json:"is_first_focus"`
-	PendingReconfirm     bool                              `json:"pending_reconfirm"`     // CONFIRMING 修改后回到 COLLECTING，待全部 COMPLETE 后应直接回到 CONFIRMING
-	PendingAbortConfirm  bool                              `json:"pending_abort_confirm"` // 已发“确定要结束本次记录吗？”，等待用户确认；确认则删除会话，否则清除此标记继续收集
+	SemanticRelevance   string                            `json:"semantic_relevance"`
+	PendingUpdates      map[string]map[string]interface{} `json:"pending_updates"` // customer_id -> field -> value，用于状态推导和 OUTPUTTING 写入 follow_records
+	IsFirstFocus        bool                              `json:"is_first_focus"`
+	PendingReconfirm    bool                              `json:"pending_reconfirm"`     // CONFIRMING 修改后回到 COLLECTING，待全部 COMPLETE 后应直接回到 CONFIRMING
+	PendingAbortConfirm bool                              `json:"pending_abort_confirm"` // 已发“确定要结束本次记录吗？”，等待用户确认；确认则删除会话，否则清除此标记继续收集
 }

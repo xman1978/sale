@@ -281,19 +281,23 @@ func (r *Repository) GetSessionConversationHistory(ctx context.Context, sessionI
 	if err != nil {
 		return "", err
 	}
+	part := ""
 	var parts []string
 	for _, d := range dialogs {
 		if d.TurnIndex >= beforeTurnIndex {
 			break
 		}
+		if d.Status == models.StatusAskingOtherCustomers {
+			parts = append(parts, part)
+		}
 		if d.TurnContent != nil && *d.TurnContent != "" {
-			parts = append(parts, *d.TurnContent)
+			part += *d.TurnContent + "\n"
 		}
 	}
 	if len(parts) == 0 {
-		return "", nil
+		return part, nil
 	}
-	return strings.Join(parts, "\n"), nil
+	return parts[len(parts)-1], nil
 }
 
 // DeleteDialogsBySession 删除指定会话的所有 dialog 记录（OUTPUTTING 完成后调用，释放存储）

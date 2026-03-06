@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"records/internal/config"
@@ -26,9 +27,16 @@ func extractFinalContent(raw string) string {
 	// 支持 </think> <think></think> 等常见变体（不区分大小写）
 	idx := strings.Index(strings.ToLower(raw), "</think>")
 	if idx >= 0 {
-		return strings.TrimSpace(raw[idx+8:])
+		raw = strings.TrimSpace(raw[idx+8:])
 	}
-	return raw
+	// 删除 markdown 文本和代码标识
+	re := regexp.MustCompile("^```(?:json)?([\\s\\S]*?)```$")
+	match := re.FindStringSubmatch(raw)
+	if len(match) > 1 {
+		raw = match[1]
+	}
+
+	return strings.TrimSpace(raw)
 }
 
 // Client AI客户端接口
@@ -272,7 +280,11 @@ User: %s
 	case models.StatusConfirming:
 		systemPrompt = c.prompts.DialogueConfirming
 
-		userPrompt = fmt.Sprintf(`跟进记录（JSON）：%s`, historyContext)
+		userPrompt = fmt.Sprintf(`跟进记录（JSON）：
+%s
+
+用户刚才说的话：%s
+`, historyContext, userInput)
 
 	default:
 		return "", fmt.Errorf("unsupported stage: %s", stage)

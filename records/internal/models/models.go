@@ -190,13 +190,13 @@ const (
 
 // StateFieldMap 状态到字段的映射
 var StateFieldMap = map[string]string{
-	StateCustomerName:  "customer_name",
-	StateContactPerson: "contact_person",
-	StateFollowMethod:  "follow_method",
-	StateFollowContent: "follow_content",
-	StateFollowGoal:    "follow_goal",
-	StateFollowResult:  "follow_result",
-	StateNextPlan:      "next_plan",
+	StateCustomerName:  "CUSTOMER_NAME",
+	StateContactPerson: "CONTACT_PERSON",
+	StateFollowMethod:  "FOLLOW_METHOD",
+	StateFollowContent: "FOLLOW_CONTENT",
+	StateFollowGoal:    "FOLLOW_GOAL",
+	StateFollowResult:  "FOLLOW_RESULT",
+	StateNextPlan:      "NEXT_PLAN",
 }
 
 // GetFieldByState 根据状态获取对应的字段名
@@ -205,17 +205,17 @@ func GetFieldByState(state string) string {
 }
 
 // StateFieldMap 状态到字段的映射
-var StateInfoMap = map[string]string{
+var StateFieldDescriptionMap = map[string]string{
 	StateCustomerName:  "客户名称",
-	StateContactPerson: "联系人",
+	StateContactPerson: "客户联系人",
 	StateFollowMethod:  "跟进方式（线上/线下）",
-	StateFollowContent: "跟进事项/项目",
-	StateFollowGoal:    "跟进期望达到的目标",
-	StateFollowResult:  "跟进实际达到的结果",
-	StateNextPlan:      "跟进后下一步的计划",
+	StateFollowContent: "本次沟通涉及的具体业务或产品名称",
+	StateFollowGoal:    "希望通过本次跟进最终达成的业务结果状态",
+	StateFollowResult:  "本次沟通中客户已明确表达的真实反馈、态度、结论",
+	StateNextPlan:      "本次跟进结束后，计划下一步推动客户销售的具体行动步骤",
 }
 
 // GetExpectedField 获取期望收集的字段
-func GetExpectedInfo(state string) string {
-	return StateInfoMap[state]
+func GetExpectedFieldDescription(state string) string {
+	return StateFieldDescriptionMap[state]
 }
