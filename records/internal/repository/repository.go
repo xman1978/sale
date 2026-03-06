@@ -172,7 +172,7 @@ func (r *Repository) UpdateCustomer(ctx context.Context, customer *models.Custom
 
 func (r *Repository) GetActiveSession(ctx context.Context, userID string) (*models.Session, error) {
 	var session models.Session
-	query := `SELECT id, user_id, status, ended_at FROM sessions WHERE user_id = $1 AND status != $2 AND ended_at IS NULL ORDER BY created_at DESC LIMIT 1`
+	query := `SELECT id, user_id, status, ended_at, updated_at FROM sessions WHERE user_id = $1 AND status != $2 AND ended_at IS NULL ORDER BY created_at DESC LIMIT 1`
 	executor := r.getExecer(ctx)
 	err := executor.GetContext(ctx, &session, query, userID, models.StatusExit)
 	if err != nil {
@@ -222,6 +222,21 @@ func (r *Repository) UpdateSessionWithOptimisticLock(ctx context.Context, sessio
 	}
 
 	return nil
+}
+
+// ClaimSessionForTurn 乐观锁抢占：仅更新 updated_at，用于「本轮谁有权落库」的争用。返回 true 表示抢占成功。
+func (r *Repository) ClaimSessionForTurn(ctx context.Context, sessionID uuid.UUID, expectedUpdatedAt time.Time) (bool, error) {
+	query := `UPDATE sessions SET updated_at = NOW() WHERE id = $1 AND updated_at = $2`
+	executor := r.getExecer(ctx)
+	result, err := executor.ExecContext(ctx, query, sessionID, expectedUpdatedAt)
+	if err != nil {
+		return false, fmt.Errorf("claim session for turn id=%s: %w", sessionID, err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("get rows affected: %w", err)
+	}
+	return rowsAffected == 1, nil
 }
 
 func (r *Repository) GetLatestDialog(ctx context.Context, sessionID uuid.UUID) (*models.Dialog, error) {
@@ -282,22 +297,21 @@ func (r *Repository) GetSessionConversationHistory(ctx context.Context, sessionI
 		return "", err
 	}
 	part := ""
-	var parts []string
+
 	for _, d := range dialogs {
 		if d.TurnIndex >= beforeTurnIndex {
 			break
 		}
 		if d.Status == models.StatusAskingOtherCustomers {
-			parts = append(parts, part)
+			part = ""
+			continue
 		}
 		if d.TurnContent != nil && *d.TurnContent != "" {
 			part += *d.TurnContent + "\n"
 		}
 	}
-	if len(parts) == 0 {
-		return part, nil
-	}
-	return parts[len(parts)-1], nil
+
+	return strings.TrimSpace(part), nil
 }
 
 // DeleteDialogsBySession 删除指定会话的所有 dialog 记录（OUTPUTTING 完成后调用，释放存储）

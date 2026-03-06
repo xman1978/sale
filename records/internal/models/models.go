@@ -39,10 +39,11 @@ type CustomerContact struct {
 
 // Session 会话模型
 type Session struct {
-	ID      uuid.UUID  `db:"id" json:"id"`
-	UserID  string     `db:"user_id" json:"user_id"`
-	Status  string     `db:"status" json:"status"`
-	EndedAt *time.Time `db:"ended_at" json:"ended_at,omitempty"`
+	ID        uuid.UUID  `db:"id" json:"id"`
+	UserID    string     `db:"user_id" json:"user_id"`
+	Status    string     `db:"status" json:"status"`
+	EndedAt   *time.Time `db:"ended_at" json:"ended_at,omitempty"`
+	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 // Dialog 对话模型

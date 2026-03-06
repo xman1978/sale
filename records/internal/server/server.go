@@ -220,6 +220,10 @@ func (s *Server) HandleMessage(ctx context.Context, msg *feishu.Message) error {
 		s.logger.Error("Failed to process turn", "error", err, "user_id", msg.UserID)
 		reply = s.config.Messages.ProcessError
 	}
+	// 空回复表示本次请求被去重（重复消息），无需再向用户发送任何内容
+	if err == nil && reply == "" {
+		return nil
+	}
 
 	if err := s.feishuClient.SendMessage(ctx, msg.ChatID, reply); err != nil {
 		s.logger.Error("Failed to send reply", "error", err, "chat_id", msg.ChatID)

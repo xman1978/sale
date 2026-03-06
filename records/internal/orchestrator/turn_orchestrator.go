@@ -114,6 +114,21 @@ func (o *TurnOrchestrator) ProcessTurn(ctx context.Context, userID, userInput st
 			return fmt.Errorf("failed to load runtime: %w", err)
 		}
 
+		// 2.2 全阶段防重复请求：对已存在 session 进行一次乐观锁抢占
+		// 新建 session（例如 OUTPUTTING 分支创建的新 session）UpdatedAt 可能为零值，此时无需抢占
+		if !session.UpdatedAt.IsZero() {
+			claimed, err := o.repo.ClaimSessionForTurn(txCtx, session.ID, session.UpdatedAt)
+			if err != nil {
+				o.logger.Error("ClaimSessionForTurn failed", "error", err)
+				return err
+			}
+			if !claimed {
+				o.logger.Info("Duplicate request detected: claim failed, skipping processing", "session_id", session.ID)
+				reply = ""
+				return nil
+			}
+		}
+
 		// 2.5 用户中断：待确认分支（上一轮已发“确定要结束本次记录吗？”）
 		if runtime.PendingAbortConfirm {
 			confirmed, err := o.aiClient.IsUserAbortConfirmation(ctx, userInput)
@@ -180,7 +195,7 @@ func (o *TurnOrchestrator) ProcessTurn(ctx context.Context, userID, userInput st
 		}
 
 		// 5. 规则引擎处理
-		newRuntime, err := o.processWithRuleEngine(txCtx, runtime, semanticResult, userInput, userID)
+		newRuntime, err := o.processWithRuleEngine(txCtx, session, runtime, semanticResult, userInput, userID)
 		if err != nil {
 			return fmt.Errorf("rule engine processing failed: %w", err)
 		}
@@ -350,9 +365,10 @@ func (o *TurnOrchestrator) ensureFocusWhenPending(ctx context.Context, runtime *
 	}
 }
 
-// processWithRuleEngine 使用规则引擎处理，返回新的运行态
+// processWithRuleEngine 使用规则引擎处理，返回新的运行态。session 用于乐观锁抢占（CONFIRMING 确认落库前）。
 func (o *TurnOrchestrator) processWithRuleEngine(
 	ctx context.Context,
+	session *models.Session,
 	runtime *RuntimeContext,
 	semanticResult *models.SemanticAnalysisResult,
 	userInput string,
@@ -364,7 +380,7 @@ func (o *TurnOrchestrator) processWithRuleEngine(
 	// 第一步：统一确保 focus（有 PendingUpdates 时不能为空，多客户时从对话表获取正确关联）
 	o.ensureFocusWhenPending(ctx, &newRuntime)
 
-	// CONFIRMING 阶段：用户给出肯定答复时，落库当前客户并进入 ASKING_OTHER_CUSTOMERS
+	// CONFIRMING 阶段：用户给出肯定答复时，先乐观锁抢占再落库当前客户并进入 ASKING_OTHER_CUSTOMERS
 	if runtime.Status == models.StatusConfirming {
 		confirmed, err := o.aiClient.IsUserConfirmation(ctx, userInput)
 		if err != nil {
