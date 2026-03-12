@@ -92,6 +92,26 @@
     .auth-loading p { color: var(--secondary-text); font-size: 14px; }
     .feishu-login-btn { display: inline-block; margin-top: 16px; padding: 12px 24px; background: var(--primary-color); color: white; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500; }
     .forbidden-msg { padding: 24px; text-align: center; color: var(--secondary-text); font-size: 14px; }
+    .hotwords-trend {
+      margin: 16px; padding: 16px; background: var(--card-bg); border-radius: 8px;
+      border: 1px solid var(--border-color); cursor: pointer; transition: background 0.2s;
+    }
+    .hotwords-trend:active { background: #F2F3F5; }
+    .hotwords-trend h3 { font-size: 14px; color: var(--primary-text); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+    .hotwords-trend h3 span:last-child { font-size: 12px; font-weight: normal; color: var(--tertiary-text); }
+    .hotwords-trend-chart { display: flex; flex-wrap: wrap; gap: 8px; }
+    .hotwords-trend-tag { font-size: 12px; color: var(--primary-color); background: rgba(51, 112, 255, 0.1); padding: 4px 10px; border-radius: 4px; }
+    .hotwords-trend-empty { font-size: 13px; color: var(--tertiary-text); }
+    .hotwords-modal-mask {
+      position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .hotwords-modal { background: var(--card-bg); border-radius: 12px; width: 100%; max-width: 480px; height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+    .hotwords-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+    .hotwords-modal-title { font-size: 16px; font-weight: 500; }
+    .hotwords-modal-close { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--secondary-text); }
+    .hotwords-modal-close:hover { color: var(--primary-text); }
+    .hotwords-modal iframe { flex: 1; border: none; width: 100%; }
   </style>
 </head>
 <body>
@@ -127,6 +147,15 @@
           <div class="nav-action" style="visibility: hidden;"></div>
           <div class="nav-title">日志查看</div>
           <div class="nav-action" style="visibility: hidden;"></div>
+        </div>
+        <!-- 最近一天热词趋势，点击弹出完整热词统计页 -->
+        <div class="hotwords-trend" @click="openHotwordsModal">
+          <h3>热词趋势 <span v-if="hotwordsData && hotwordsData.run_time">{{ formatDate(hotwordsData.run_time) }}</span></h3>
+          <div v-if="hotwordsLoading" class="hotwords-trend-empty">加载中…</div>
+          <div v-else-if="!hotwordsTrendTags.length" class="hotwords-trend-empty">暂无热词数据</div>
+          <div v-else class="hotwords-trend-chart">
+            <span v-for="t in hotwordsTrendTags" :key="t" class="hotwords-trend-tag">{{ t }}</span>
+          </div>
         </div>
         <div v-if="usersLoading" class="loading"><div class="loading-spinner"></div></div>
         <div v-else class="list-container">
@@ -234,6 +263,17 @@
           </div>
         </div>
       </div>
+
+      <!-- 热词统计弹层：内嵌完整热词页 -->
+      <div v-if="showHotwordsModal" class="hotwords-modal-mask" @click.self="showHotwordsModal = false">
+        <div class="hotwords-modal">
+          <div class="hotwords-modal-header">
+            <span class="hotwords-modal-title">热词统计</span>
+            <div class="hotwords-modal-close" @click="showHotwordsModal = false">✕</div>
+          </div>
+          <iframe :src="hotwordsIframeSrc" title="热词统计"></iframe>
+        </div>
+      </div>
     </template>
   </div>
 
@@ -270,6 +310,9 @@
         const detailRecords = ref([])
         const detailLoading = ref(false)
         const detailPageRef = ref(null)
+        const hotwordsLoading = ref(false)
+        const hotwordsData = ref(null)
+        const showHotwordsModal = ref(false)
 
         function copyCanvasToClipboard(canvas) {
           return new Promise((resolve, reject) => {
@@ -362,6 +405,34 @@
           const configured = window.APP_CONFIG && window.APP_CONFIG.feishuRedirectUri
           if (configured) return configured
           return window.location.origin + (window.location.pathname || '/').replace(/\/?$/, '/')
+        }
+        const hotwordsTrendTags = computed(() => {
+          const d = hotwordsData.value
+          if (!d || !d.windows || !d.windows.length) return []
+          const w = d.windows[0]
+          if (!w || !w.groups) return []
+          const tags = []
+          w.groups.forEach(g => {
+            (g.items || []).slice(0, 6).forEach(item => { if (item.term) tags.push(item.term) })
+          })
+          return tags.slice(0, 12)
+        })
+        const hotwordsIframeSrc = computed(() => 'hotwords.html')
+        function openHotwordsModal() {
+          showHotwordsModal.value = true
+        }
+        async function fetchHotwords() {
+          hotwordsLoading.value = true
+          try {
+            const res = await fetch(apiBase() + '/hotwords/stats')
+            const json = await res.json()
+            if (json.success && json.data) hotwordsData.value = json.data
+            else hotwordsData.value = null
+          } catch (_) {
+            hotwordsData.value = null
+          } finally {
+            hotwordsLoading.value = false
+          }
         }
         const feishuOAuthUrl = computed(() => {
           const appId = window.APP_CONFIG && window.APP_CONFIG.feishuAppId
@@ -481,7 +552,10 @@
 
         onMounted(async () => {
           await feishuAuth()
-          if (userId.value) await fetchManagerUsers()
+          if (userId.value) {
+            await fetchManagerUsers()
+            fetchHotwords()
+          }
         })
 
         return {
@@ -498,12 +572,18 @@
           detailRecords,
           detailLoading,
           detailPageRef,
+          hotwordsLoading,
+          hotwordsData,
+          hotwordsTrendTags,
+          showHotwordsModal,
+          hotwordsIframeSrc,
           feishuOAuthUrl,
           selectUser,
           backToUsers,
           selectGroup,
           backToGroups,
           shareDetailPage,
+          openHotwordsModal,
           formatDate,
           formatTime,
           formatDateTime

@@ -36,21 +36,29 @@ func New(cfg config.Database) (*sqlx.DB, error) {
 
 // loadSchemaSQL 从文件加载 SQL 架构
 func loadSchemaSQL() (string, error) {
-	// 获取当前工作目录
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get working directory: %w", err)
 	}
-
-	// 构建 schema.sql 文件路径
 	schemaPath := filepath.Join(wd, "sql", "schema.sql")
-
-	// 读取 SQL 文件
 	sqlBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read schema.sql: %w", err)
 	}
+	return string(sqlBytes), nil
+}
 
+// loadHotwordsSQL 加载热词表 DDL
+func loadHotwordsSQL() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+	p := filepath.Join(wd, "sql", "hotwords.sql")
+	sqlBytes, err := os.ReadFile(p)
+	if err != nil {
+		return "", fmt.Errorf("failed to read hotwords.sql: %w", err)
+	}
 	return string(sqlBytes), nil
 }
 
@@ -69,21 +77,30 @@ func InitDatabase(db *sqlx.DB) error {
 		return fmt.Errorf("failed to check existing tables: %w", err)
 	}
 
-	// 如果所有表都已存在，跳过迁移
-	if tableCount >= 5 {
-		return nil
+	if tableCount < 5 {
+		schemaSQL, err := loadSchemaSQL()
+		if err != nil {
+			return fmt.Errorf("failed to load schema SQL: %w", err)
+		}
+		if _, err = db.Exec(schemaSQL); err != nil {
+			return fmt.Errorf("failed to execute database schema: %w", err)
+		}
 	}
 
-	// 从文件加载 SQL 架构
-	schemaSQL, err := loadSchemaSQL()
+	// 热词表：若不存在则创建
+	var hotwordsExist int
+	err = db.Get(&hotwordsExist, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'sale' AND table_name = 'sales_keyword_records'`)
 	if err != nil {
-		return fmt.Errorf("failed to load schema SQL: %w", err)
+		return fmt.Errorf("failed to check hotwords tables: %w", err)
 	}
-
-	// 执行数据库初始化SQL
-	_, err = db.Exec(schemaSQL)
-	if err != nil {
-		return fmt.Errorf("failed to execute database schema: %w", err)
+	if hotwordsExist == 0 {
+		hotwordsSQL, err := loadHotwordsSQL()
+		if err != nil {
+			return fmt.Errorf("failed to load hotwords SQL: %w", err)
+		}
+		if _, err = db.Exec(hotwordsSQL); err != nil {
+			return fmt.Errorf("failed to execute hotwords schema: %w", err)
+		}
 	}
 
 	return nil

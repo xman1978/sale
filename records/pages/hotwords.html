@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="referrer" content="no-referrer">
+  <title>今日热词</title>
+  <script>window.APP_CONFIG=window.APP_CONFIG||{apiPrefix:'/api'};</script>
+  <script src="config.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.0.2/wordcloud2.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 12px; background: #f2f2f7; color: #1c1c1e; font-size: 14px; }
+    .meta { color: #8e8e93; font-size: 12px; margin: 0 0 12px 0; }
+    .category-tabs { display: inline-flex; background: #e5e5ea; padding: 4px; border-radius: 10px; margin-bottom: 12px; }
+    .category-tabs button { padding: 8px 16px; border: none; background: transparent; border-radius: 8px; cursor: pointer; font-size: 14px; color: #3c3c43; transition: background 0.2s, color 0.2s; }
+    .category-tabs button.active { background: #2c2c2e; color: #fff; }
+    .cloud-wrap { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); min-height: 55vh; height: 55vh; display: flex; align-items: center; justify-content: center; }
+    .cloud-wrap canvas { display: block; }
+    .cloud-placeholder { color: #8e8e93; font-size: 14px; }
+    .time-bar { display: inline-flex; background: #e5e5ea; padding: 4px; border-radius: 10px; }
+    .time-bar button { padding: 8px 18px; border: none; background: transparent; border-radius: 8px; cursor: pointer; font-size: 14px; color: #3c3c43; transition: background 0.2s, color 0.2s; }
+    .time-bar button.active { background: #2c2c2e; color: #fff; }
+    .loading, .error { padding: 24px; text-align: center; color: #8e8e93; }
+    .error { color: #ff3b30; }
+  </style>
+</head>
+<body>
+  <p class="meta" id="meta"></p>
+  <div class="category-tabs" id="categoryTabs" style="display:none;"></div>
+  <div class="cloud-wrap" id="cloudWrap" style="display:none;">
+    <canvas id="wordcloudCanvas"></canvas>
+    <p class="cloud-placeholder" id="cloudPlaceholder" style="display:none;">暂无热词</p>
+  </div>
+  <div class="time-bar" id="timeBar" style="display:none;"></div>
+  <div class="loading" id="loading">加载中…</div>
+  <div class="error" id="error" style="display:none;"></div>
+
+  <script>
+(function(){
+  var apiPrefix = (window.APP_CONFIG && window.APP_CONFIG.apiPrefix) ? window.APP_CONFIG.apiPrefix : '/api';
+  var loadingEl = document.getElementById('loading');
+  var errorEl = document.getElementById('error');
+  var metaEl = document.getElementById('meta');
+  var categoryTabsEl = document.getElementById('categoryTabs');
+  var cloudWrapEl = document.getElementById('cloudWrap');
+  var canvasEl = document.getElementById('wordcloudCanvas');
+  var cloudPlaceholderEl = document.getElementById('cloudPlaceholder');
+  var timeBarEl = document.getElementById('timeBar');
+
+  var pageData = null;
+  var selectedCategoryIndex = 0;
+  var selectedTimeIndex = 0;
+
+  var categoryLabels = ['产品', '需求', '痛点', '阻力'];
+  var timeLabels = ['7天', '30天', '90天'];
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function showError(msg) {
+    loadingEl.style.display = 'none';
+    cloudWrapEl.style.display = 'none';
+    categoryTabsEl.style.display = 'none';
+    timeBarEl.style.display = 'none';
+    errorEl.textContent = msg || '获取数据失败';
+    errorEl.style.display = 'block';
+  }
+
+  function formatRunTime(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+
+  function getItems() {
+    if (!pageData || !pageData.windows || !pageData.windows[selectedTimeIndex]) return [];
+    var win = pageData.windows[selectedTimeIndex];
+    if (!win.groups || !win.groups[selectedCategoryIndex]) return [];
+    var g = win.groups[selectedCategoryIndex];
+    return g.items || [];
+  }
+
+  function drawWordCloud() {
+    cloudPlaceholderEl.style.display = 'none';
+    canvasEl.style.display = 'block';
+    var items = getItems();
+    if (items.length === 0) {
+      canvasEl.style.display = 'none';
+      cloudPlaceholderEl.style.display = 'block';
+      return;
+    }
+    var list = items.map(function(item) { return [item.term || '', item.frequency || 0]; });
+    list.sort(function(a, b) { return (b[1] || 0) - (a[1] || 0); });
+    var w = cloudWrapEl.clientWidth;
+    var h = cloudWrapEl.clientHeight || Math.max(400, Math.floor(w * 0.85));
+    canvasEl.width = w;
+    canvasEl.height = h;
+    var maxFreq = list.length ? Math.max.apply(null, list.map(function(x) { return x[1]; })) : 1;
+    var minSide = Math.min(w, h);
+    if (typeof WordCloud !== 'undefined') {
+      try {
+        WordCloud(canvasEl, {
+          list: list,
+          weightFactor: function(size) {
+            var t = maxFreq <= 1 ? 1 : (size / maxFreq);
+            return Math.max(14, minSide * 0.26 * (0.12 + 0.88 * t));
+          },
+          shuffle: false,
+          shape: 'square',
+          ellipticity: w / h,
+          shrinkToFit: true,
+          backgroundColor: '#fff',
+          clearCanvas: true
+        });
+      } catch (e) {
+        canvasEl.style.display = 'none';
+        cloudPlaceholderEl.style.display = 'block';
+        cloudPlaceholderEl.textContent = '词云绘制失败';
+      }
+    } else {
+      cloudPlaceholderEl.textContent = '词云库未加载';
+      cloudPlaceholderEl.style.display = 'block';
+      canvasEl.style.display = 'none';
+    }
+  }
+
+  function setActiveCategory(i) {
+    selectedCategoryIndex = i;
+    var btns = categoryTabsEl.querySelectorAll('button');
+    for (var j = 0; j < btns.length; j++) btns[j].classList.toggle('active', j === i);
+    drawWordCloud();
+  }
+
+  function setActiveTime(i) {
+    selectedTimeIndex = i;
+    var btns = timeBarEl.querySelectorAll('button');
+    for (var j = 0; j < btns.length; j++) btns[j].classList.toggle('active', j === i);
+    drawWordCloud();
+  }
+
+  function render(data) {
+    if (!data || !data.windows || !data.windows.length) {
+      showError('今日暂无热词统计');
+      return;
+    }
+    loadingEl.style.display = 'none';
+    errorEl.style.display = 'none';
+    pageData = data;
+    metaEl.textContent = '统计时间：' + formatRunTime(data.run_time);
+
+    categoryTabsEl.style.display = 'flex';
+    categoryTabsEl.innerHTML = '';
+    categoryLabels.forEach(function(label, i) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.dataset.index = i;
+      categoryTabsEl.appendChild(btn);
+    });
+    categoryTabsEl.querySelectorAll('button').forEach(function(btn, i) {
+      btn.addEventListener('click', function() { setActiveCategory(i); });
+    });
+
+    timeBarEl.style.display = 'flex';
+    timeBarEl.innerHTML = '';
+    timeLabels.forEach(function(label, i) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.dataset.index = i;
+      timeBarEl.appendChild(btn);
+    });
+    timeBarEl.querySelectorAll('button').forEach(function(btn, i) {
+      btn.addEventListener('click', function() { setActiveTime(i); });
+    });
+
+    cloudWrapEl.style.display = 'flex';
+    selectedCategoryIndex = 0;
+    selectedTimeIndex = 0;
+    categoryTabsEl.querySelectorAll('button')[0].classList.add('active');
+    timeBarEl.querySelectorAll('button')[0].classList.add('active');
+    drawWordCloud();
+
+    window.addEventListener('resize', function() {
+      if (pageData) drawWordCloud();
+    });
+  }
+
+  loadingEl.style.display = 'block';
+  fetch(apiPrefix + '/hotwords/stats')
+    .then(function(res) { return res.json(); })
+    .then(function(json) {
+      if (json.success && json.data) render(json.data);
+      else showError(json.message || '数据格式错误');
+    })
+    .catch(function(e) {
+      showError('请求失败：' + (e.message || '网络错误'));
+    });
+})();
+  </script>
+</body>
+</html>

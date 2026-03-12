@@ -124,6 +124,7 @@ type Prompts struct {
 	DialogueConfirming      string `yaml:"dialogue_confirming"`
 	CustomerSummary         string `yaml:"customer_summary"`
 	EntityNormalization     string `yaml:"entity_normalization"`
+	HotwordsExtractor       string `yaml:"hotwords_extractor"` // 热词抽取 LLM 的 system prompt
 }
 
 type Messages struct {

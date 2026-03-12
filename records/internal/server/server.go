@@ -25,15 +25,16 @@ import (
 
 // Server 服务器
 type Server struct {
-	config       *config.Config
-	db           *sqlx.DB
-	feishuClient feishu.Client
-	aiClient     ai.Client
-	orchestrator *orchestrator.TurnOrchestrator
-	outputWorker *worker.OutputWorker
-	logger       logger.Logger
-	httpServer   *http.Server
-	userLocks    sync.Map // 用户级锁，key: userID, value: *sync.Mutex
+	config         *config.Config
+	db             *sqlx.DB
+	feishuClient   feishu.Client
+	aiClient       ai.Client
+	orchestrator   *orchestrator.TurnOrchestrator
+	outputWorker   *worker.OutputWorker
+	logger         logger.Logger
+	httpServer     *http.Server
+	userLocks      sync.Map   // 用户级锁，key: userID, value: *sync.Mutex
+	hotwordsCancel context.CancelFunc // 热词定时任务取消函数
 }
 
 // apiPrefix 返回 API 路径前缀，已规范化（无尾部斜杠，空则默认 /api）
@@ -113,6 +114,11 @@ func (s *Server) Start() error {
 		}
 	}()
 
+	// 热词流水线：每日 00:05 执行，与主程序统一启动
+	hotwordsCtx, hotwordsCancel := context.WithCancel(context.Background())
+	s.hotwordsCancel = hotwordsCancel
+	go s.runHotwordsScheduler(hotwordsCtx)
+
 	// 启动HTTP服务器（健康检查、page API、静态文件）
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.healthHandler)
@@ -131,6 +137,10 @@ func (s *Server) Start() error {
 	// Manager 页面 API（仅管理员，只读）
 	mux.HandleFunc(apiP+"/manager/users", s.managerUsersHandler)
 	mux.HandleFunc(apiP+"/manager/users/", s.managerUsersSubHandler)
+
+	// 热词统计 API（供 pages/hot_words.html 与 manager 热词区拉取）
+	mux.HandleFunc(apiP+"/hotwords/stats", s.hotwordsStatsHandler)
+	mux.HandleFunc(apiP+"/hotwords/run_dates", s.hotwordsRunDatesHandler)
 
 	// 静态页面（records/pages 目录）
 	staticDir := s.config.Server.StaticDir
@@ -192,6 +202,9 @@ func (s *Server) Start() error {
 
 // Shutdown 优雅关闭服务器
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.hotwordsCancel != nil {
+		s.hotwordsCancel()
+	}
 	s.logger.Info("Shutting down output worker...")
 	s.outputWorker.Stop()
 	s.logger.Info("Output worker stopped")
